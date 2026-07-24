@@ -1,0 +1,31 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Agents kit lint
+        run: python scripts/validate_agents.py
+
+      - name: Python tests
+        run: python run_tests.py
+
+      - name: Secret / leak scan
+        shell: bash
+        run: |
+          if git ls-files | grep -E '\.secrets|\.token$|agents\.config\.yaml$'; then
+            echo "Leaked tracked files found"
+            exit 1
+          fi
+          echo "No secrets/real config tracked."

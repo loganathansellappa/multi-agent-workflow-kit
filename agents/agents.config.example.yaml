@@ -1,0 +1,78 @@
+# =============================================================================
+# agents.config.example.yaml  —  TEMPLATE
+# -----------------------------------------------------------------------------
+# Copy this file to `agents.config.yaml` (same directory) and replace the
+# placeholders with your own values. The real config is gitignored so your local
+# paths never get committed.
+#
+#   cp agents.config.example.yaml agents.config.yaml          # macOS/Linux
+#   Copy-Item agents.config.example.yaml agents.config.yaml   # Windows
+#
+# Placeholders:
+#   <REPO_ROOT>   parent directory where you clone your project repos
+#   <REPORTS>     directory where review / metrics artifacts are written
+# =============================================================================
+
+outputs:
+  # Where agents write review reports and the metrics log.
+  reportsRoot: <REPORTS>
+  metricsLog: <REPORTS>/agent-metrics.jsonl
+  budgets:
+    # Advisory thresholds read by the agent-preflight-check skill. These never
+    # block work — they only surface a "you're spending a lot" signal.
+    perTaskTokenCeiling: 150000
+    rollingDailyTokenBudget: 4000000
+
+models:
+  # Declarative per-agent model routing. `scripts/apply_model_routing.py` reads
+  # this and writes it into the Copilot CLI store
+  # (~/.copilot/settings.json -> subagents.agents.<key>), where <key> is the agent
+  # file basename without ".agent.md" (== each agent's `name:`).
+  #
+  # NOTE: Copilot CLI binds per-agent models via settings.json, NOT via markdown
+  # frontmatter — do not add a `model:` field to the .agent.md files.
+  tiers:
+    # Model cost varies ~5x between tiers. Reserve premium for genuinely hard
+    # reasoning; use standard everywhere else.
+    premium: { model: claude-opus-4.8, effortLevel: high }
+    standard: { model: claude-sonnet-5, effortLevel: medium }
+  agents:
+    # Example: one agent on premium (deep reasoning), the rest on standard.
+    backend-developer: premium
+    frontend-developer: standard
+    api-developer: standard
+    feature-orchestrator: standard
+    review-orchestrator: standard
+    code-reviewer: standard
+    security-reviewer: standard
+  # Personal / experimental agents you don't want auto-managed go here.
+  exempt: []
+
+# ---------------------------------------------------------------------------
+# Service map: one entry per repo/component the orchestrators route to. Each maps
+# a component to its developer + reviewer agent and base branch. Adapt to your
+# own stack — the names below are generic examples.
+# ---------------------------------------------------------------------------
+services:
+  # serviceA is a server-side component, serviceB a client/UI component, and
+  # serviceC an API-contract component — rename and add as many as you need.
+  serviceA:
+    repoPath: <REPO_ROOT>/serviceA
+    baseBranch: main
+    developerAgent: backend-developer
+    reviewerAgent: code-reviewer
+
+  serviceB:
+    repoPath: <REPO_ROOT>/serviceB
+    baseBranch: main
+    developerAgent: frontend-developer
+    reviewerAgent: code-reviewer
+
+  serviceC:
+    repoPath: <REPO_ROOT>/serviceC
+    baseBranch: main
+    developerAgent: api-developer
+    reviewerAgent: code-reviewer
+
+fallback:
+  reviewerAgent: code-reviewer

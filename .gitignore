@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# Per-user config (contains local paths) — ship the .example instead
+agents/agents.config.yaml
+
+# Secrets — never commit
+.secrets/
+*.token
