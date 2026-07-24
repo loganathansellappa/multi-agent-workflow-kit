@@ -84,6 +84,52 @@ GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP 
 - **LEARN** writes durable lessons back to the KB so the next task is faster.
 - Agents create **local commits only** after the gate is met. They **never push**.
 
+### How a feature request flows
+
+```mermaid
+flowchart TD
+    A["Feature request / ticket"] --> P["Preflight (skills)<br/>agent-preflight-check · untrusted-input-guard<br/>tier · model routing · budget"]
+
+    P --> ICP{"Goal + acceptance criteria?"}
+    ICP -->|missing / ambiguous| BLK["status: blocked → ask_user"]
+    BLK --> ICP
+    ICP -->|complete| B["feature-orchestrator<br/>GOAL → understand · read repo AGENTS.md"]
+
+    B --> DISC["Triage &amp; scope<br/>find entry point · measure blast radius"]
+    DISC --> C["Load context<br/>KB (00-index → pages) · conventions"]
+    C --> PLAN["PLAN<br/>scope envelope · contract/consumer impact · test plan"]
+
+    PLAN --> D{"Contract change?"}
+    D -->|yes, contract-first| E["api-developer<br/>OpenAPI / GraphQL / proto"]
+    D -->|no| DELEG
+    E --> DELEG["Delegate per component"]
+
+    DELEG --> F["Developer agent(s)<br/>backend-developer · frontend-developer · ..."]
+
+    subgraph LOOP["Each developer owns its loop → clean gate"]
+        F --> G["IMPLEMENT"]
+        G --> H["BUILD + TEST<br/>functional · security · regression"]
+        H --> I["code-reviewer / security-reviewer (read-only)<br/>evidence-based · each finding verified"]
+        I -->|findings| J["FIX"]
+        J --> H
+    end
+
+    I -->|"0 Critical / 0 High / 0 Medium"| K{"Cross-component change?"}
+
+    K -->|no| M
+    K -->|yes| IBT["Integration BUILD+TEST<br/>consumer builds after contract/version bump"]
+    IBT --> L["review-orchestrator<br/>seams: contracts · versions · wiring"]
+    L -->|seam finding| J
+    L -->|clean| M["LEARN<br/>write KB · delivery-metrics-capture"]
+
+    M --> N["Quality Gate (Definition of Done)<br/>all components green · no regression · 0 C/H/M"]
+    N --> O["Local Commit<br/>NEVER push"]
+```
+
+- The **orchestrator delegates**; each **developer agent owns its own** IMPLEMENT → BUILD+TEST → REVIEW → FIX
+  loop and returns a clean, reviewed diff. Reviewers are **read-only**. The flow always stops at a **local
+  commit** — a human pushes.
+
 ---
 
 ## Cost governance & model tiering
