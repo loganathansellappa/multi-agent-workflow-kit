@@ -10,6 +10,12 @@ your own stack in minutes — with cost governance and a quality loop built in.
 > Everything here is generic. Replace the placeholders (`serviceA`, `<REPO_ROOT>`, build commands, etc.)
 > with your own project's details.
 
+> **This is a scaffold, not a drop-in.** The agents, knowledge base, and service map are deliberately
+> generic templates. Before it does useful work you must invest time customizing them to your stack:
+> fill in the KB with your real architecture/build/test commands, replace the `serviceA/B/C` map and the
+> generic role agents with your actual components and conventions, and set the model tiers. Expect setup
+> effort — this gives you the workflow skeleton and guardrails, not turnkey behavior.
+
 ---
 
 ## The idea in one picture
@@ -148,6 +154,10 @@ python scripts/apply_model_routing.py --dry-run
 python scripts/apply_model_routing.py
 ```
 
+> Safety: a real run writes `~/.copilot/settings.json.bak` (a copy of your current settings) before
+> overwriting, so you can always roll back. `--dry-run` never writes. Note the parser is regex-based
+> (stdlib-only), so keep `agents.config.yaml` formatted like `agents.config.example.yaml` — see CONTRIBUTING.
+
 ### Where the model bindings actually live
 
 The kit does **not** ship a `settings.json`. Model bindings are stored in the Copilot CLI's own per-user
@@ -221,6 +231,63 @@ Requires **Python 3.8+** (standard library only — no dependencies).
 
 ---
 
+## Running an agent from the command line
+
+Once installed (step 4), you can drive a custom agent straight from your shell with the Copilot CLI —
+either interactively or fully non-interactive ("autopilot"/headless) for scripts and CI.
+
+**Interactive, in autopilot mode** (tools run without per-action confirmation):
+
+```bash
+copilot --agent feature-orchestrator --autopilot
+```
+
+**Non-interactive / headless** (one-shot prompt, no TTY). `--allow-all-tools` is **required** for
+non-interactive runs so the agent can edit files and run commands without prompting:
+
+```bash
+copilot --agent feature-orchestrator \
+  -p "Implement the acceptance criteria in TICKET-123 across the affected services" \
+  --allow-all-tools
+```
+
+**Point it at a specific repo/working directory** with `-C`:
+
+```bash
+copilot -C /path/to/your/repo \
+  --agent backend-developer \
+  -p "Add input validation to the payments endpoint and run the tests" \
+  --allow-all-tools
+```
+
+**Pick the model / reasoning effort per run** (overrides the routed default):
+
+```bash
+copilot --agent feature-orchestrator --autopilot \
+  --model claude-sonnet-5 --effort medium
+```
+
+Useful flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `--agent <name>` | Run a specific custom agent (the agent's `name:` / filename). |
+| `--autopilot` | Start an interactive session in autopilot mode (auto-approves tool use). |
+| `-p, --prompt "<text>"` | Non-interactive one-shot prompt (headless). |
+| `--allow-all-tools` | Auto-approve all tools — **required** for non-interactive mode (env: `COPILOT_ALLOW_ALL`). |
+| `--allow-tool[=...]` / `--deny-tool[=...]` | Narrow autopilot to specific tools instead of all. |
+| `-C <dir>` | Change working directory before running. |
+| `--model` / `--effort` | Override model / reasoning effort for this run. |
+
+> **Autopilot runs unattended.** `--allow-all-tools` (and `--allow-all`) let the agent edit files and run
+> shell commands with no confirmation. The kit's agents still **never push** and create local commits only,
+> but scope your autopilot runs to a repo you trust and review the diff before pushing. Prefer
+> `--allow-tool`/`--deny-tool` over `--allow-all` when you want a tighter blast radius.
+
+Run `copilot --help` for the full flag list.
+
+---
+
 ## Adapt it to your stack — `serviceA/B/C` are placeholders. Add one `services` entry per real repo.
 - **Rename/clone agents** — the developer agents are generic roles; duplicate and specialize them
   (e.g. a `mobile-developer`) as needed. Keep each agent's `name:` equal to its filename.
@@ -238,9 +305,9 @@ Requires **Python 3.8+** (standard library only — no dependencies).
 | Script | What it does |
 | --- | --- |
 | `scripts/validate_agents.py` | Lints the agent kit (frontmatter, hardening block, gate wording, skill refs, reviewer least-privilege). |
-| `scripts/apply_model_routing.py` | Writes per-agent model bindings from config into the Copilot CLI store. |
+| `scripts/apply_model_routing.py` | Writes per-agent model bindings from config into the Copilot CLI store. Backs up `settings.json` → `settings.json.bak` before overwriting; `--dry-run` previews. |
 | `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. |
-| `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. |
+| `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. Delete-on-drift, so a real run snapshots `agents/`+`skills/` to `.sync-backups/<timestamp>/` (keeps newest 2); use `--what-if` to preview. |
 | `scripts/metrics_rollup.py` | Summarizes the metrics log into a per-day/agent rollup. |
 | `run_tests.py` | Runs the unit-test suite for the tooling. |
 

@@ -8,3 +8,6 @@ agents/agents.config.yaml
 # Secrets — never commit
 .secrets/
 *.token
+
+# Rollback snapshots written by sync_from_live.py — local-only, never commit
+.sync-backups/

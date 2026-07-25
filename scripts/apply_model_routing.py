@@ -18,6 +18,7 @@ Exit codes: 0 = ok, 4 = config error. Stdlib only; cross-platform.
 import argparse
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -56,7 +57,11 @@ def main(argv=None):
         cfg):
         tiers[m.group(1)] = {"model": m.group(2).strip(), "effortLevel": m.group(3).strip()}
     if not tiers:
-        print("ERROR: no models.tiers found in config", file=sys.stderr)
+        print("ERROR: no models.tiers found in config. "
+              "The config is parsed with regexes (stdlib-only, no YAML lib), so formatting "
+              "must match agents.config.example.yaml exactly — check the 4-space indentation "
+              "under 'models:' and that tiers are on one line, e.g. "
+              "'premium: { model: X, effortLevel: high }'.", file=sys.stderr)
         return 4
 
     # --- Parse models.agents (agent -> tier), scoped to the models: block ---
@@ -69,7 +74,10 @@ def main(argv=None):
     for m in re.finditer(r"(?m)^\s{4}([a-z0-9][a-z0-9-]+):\s*(premium|standard)\s*$", models_block):
         agent_tier[m.group(1)] = m.group(2)
     if not agent_tier:
-        print("ERROR: no models.agents map found in config", file=sys.stderr)
+        print("ERROR: no models.agents map found in config. "
+              "Formatting must match agents.config.example.yaml exactly (regex-based parse): "
+              "each mapping needs 4-space indentation, e.g. '    backend-developer: premium'.",
+              file=sys.stderr)
         return 4
 
     # --- Parse exempt list ---
@@ -143,6 +151,14 @@ def main(argv=None):
     if args.dry_run:
         print("\n(dry run - settings.json not written)")
         return 0
+
+    # Safety net: back up the existing settings.json to settings.json.bak before
+    # overwriting. This file is a shared, personal Copilot config, so a bad write
+    # (or an unexpected config) can always be rolled back from the .bak.
+    if settings_path.is_file():
+        backup = settings_path.with_name(settings_path.name + ".bak")
+        shutil.copy2(settings_path, backup)
+        print(f"Backed up existing settings to {backup}")
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     print(f"\nWrote {settings_path}")

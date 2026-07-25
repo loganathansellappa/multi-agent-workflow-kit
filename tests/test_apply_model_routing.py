@@ -87,6 +87,16 @@ class ApplyModelRouting(unittest.TestCase):
         run("--config", str(self.config), "--settings", str(s), "--agents-dir", str(self.agents_dir), "--dry-run")
         self.assertEqual(s.read_text(), before)
 
+    def test_writes_backup_before_overwrite(self):
+        # A .bak copy of the pre-existing settings is written before overwriting,
+        # so a bad write can always be rolled back.
+        s = self.new_settings({"subagents": {"agents": {"ghost-agent": {"model": "y"}}}})
+        original = s.read_text()
+        run("--config", str(self.config), "--settings", str(s), "--agents-dir", str(self.agents_dir))
+        bak = s.with_name(s.name + ".bak")
+        self.assertTrue(bak.is_file(), "expected settings.json.bak to be created")
+        self.assertEqual(bak.read_text(), original)
+
     def test_exits_4_on_missing_config(self):
         # A missing config path is a usage error -> exit code 4.
         s = self.new_settings({})

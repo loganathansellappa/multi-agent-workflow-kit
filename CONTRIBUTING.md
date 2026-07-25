@@ -9,6 +9,13 @@ starter kit — contributions should keep it that way.
   Use placeholders (`serviceA`, `<REPO_ROOT>`, `<REPORTS>`, `<ticket-id>`).
 - **Stdlib only.** The Python tooling must run on a clean Python 3.8+ install with no third-party deps.
 - **Cross-platform.** Scripts must work on Windows, macOS, and Linux.
+- **Config formatting is significant.** To stay stdlib-only, the scripts parse `agents.config.yaml` with
+  targeted **regexes, not a real YAML parser**. Keep the indentation and layout identical to
+  `agents.config.example.yaml`: 2-space top-level keys, 4-space entries under `models:`, tiers on a single
+  line (`premium: { model: X, effortLevel: high }`), and the `exempt: [...]` list inline. Reformatting
+  (different indentation, mid-line comments, multi-line tiers) can make the parser match nothing and exit
+  with `ERROR: no models.<...> found`. If you need richer config, add a real parser behind an optional
+  dependency rather than loosening the regexes silently.
 
 ## Before you open a PR
 

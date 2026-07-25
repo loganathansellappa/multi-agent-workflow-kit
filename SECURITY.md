@@ -16,6 +16,11 @@ This kit ships **templates and tooling**, not a running service. The main securi
   agents.
 - **Least privilege.** Reviewer agents are restricted to read-only tools by `validate_agents.py`. Do not
   grant them `edit`/`write`.
+- **`execute` on reviewers is trust-dependent.** Reviewers keep `execute` only for read-only inspection
+  (e.g. `git diff`, lint in check mode). The kit **cannot enforce** read-only-ness at the tool layer — that
+  relies on your agent runner treating `execute` as sandboxed and on the agent's instructions. If your
+  runner does not sandbox `execute`, treat a reviewer's `execute` as a real capability and scope/monitor it
+  accordingly (or remove it).
 - **No auto-push.** Agents create local commits only; a human reviews and pushes.
 
 ## Hardening when you adapt the kit
