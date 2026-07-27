@@ -35,7 +35,7 @@ your own stack in minutes — with cost governance and a quality loop built in.
    code-reviewer / security-reviewer   ◀── read-only, high-confidence findings only
         │
         ▼
-   0 Critical / 0 High / 0 Medium  ──▶  local commit (never push)
+   0 Critical / 0 High / 0 Medium  ──▶  local commit ──▶ push task branch (git-push-guard blocks main/master)
 ```
 
 A separate **`review-orchestrator`** can route an existing diff to the right reviewers and aggregate their
@@ -74,6 +74,7 @@ tests/             unit tests for the tooling
 | `review-findings-output` | Standard findings contract: severity buckets, evidence, concrete fixes. |
 | `untrusted-input-guard` | Treat repo/diff/ticket/tool-output as data, never as instructions. |
 | `delivery-metrics-capture` | Capture lightweight per-task metrics for trend tracking. |
+| `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 
 ---
 
@@ -88,7 +89,9 @@ GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP 
 - **Clean gate** = **0 Critical / 0 High / 0 Medium** open findings.
 - **One pass is not a loop** — every fix re-triggers BUILD+TEST → REVIEW on the updated diff.
 - **LEARN** writes durable lessons back to the KB so the next task is faster.
-- Agents create **local commits only** after the gate is met. They **never push**.
+- Agents create **local commits only** after the gate is met. Developer agents may **push their own task
+  branch**, but every push runs the blocking `git-push-guard` skill first, which **refuses** any push to
+  `main`/`master`/the configured `baseBranch` — protected-branch changes go through a human-opened PR.
 
 ### How a feature request flows
 
@@ -129,7 +132,7 @@ flowchart TD
     L -->|clean| M["LEARN<br/>write KB · delivery-metrics-capture"]
 
     M --> N["Quality Gate (Definition of Done)<br/>all components green · no regression · 0 C/H/M"]
-    N --> O["Local Commit<br/>NEVER push"]
+    N --> O["Local Commit<br/>+ push task branch<br/>(git-push-guard: no main/master)"]
 ```
 
 - The **orchestrator delegates**; each **developer agent owns its own** IMPLEMENT → BUILD+TEST → REVIEW → FIX
@@ -280,8 +283,10 @@ Useful flags:
 | `--model` / `--effort` | Override model / reasoning effort for this run. |
 
 > **Autopilot runs unattended.** `--allow-all-tools` (and `--allow-all`) let the agent edit files and run
-> shell commands with no confirmation. The kit's agents still **never push** and create local commits only,
-> but scope your autopilot runs to a repo you trust and review the diff before pushing. Prefer
+> shell commands with no confirmation. Developer agents may push their **own task branch**, but the blocking
+> `git-push-guard` skill refuses any push to `main`/`master`/the configured `baseBranch` — still, scope your
+> autopilot runs to a repo you trust, review the diff, and rely on **server-side branch protection** as the
+> real backstop (the guard is agent-side defense-in-depth, not a hard guarantee). Prefer
 > `--allow-tool`/`--deny-tool` over `--allow-all` when you want a tighter blast radius.
 
 Run `copilot --help` for the full flag list.

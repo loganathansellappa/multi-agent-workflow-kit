@@ -21,10 +21,17 @@ This kit ships **templates and tooling**, not a running service. The main securi
   relies on your agent runner treating `execute` as sandboxed and on the agent's instructions. If your
   runner does not sandbox `execute`, treat a reviewer's `execute` as a real capability and scope/monitor it
   accordingly (or remove it).
-- **No auto-push.** Agents create local commits only; a human reviews and pushes.
+- **Branch-protected push (not "no push").** Developer agents may push **only** the task/feature branch they
+  create. Before every `git push` they run the **blocking** `git-push-guard` skill, which refuses (exit 3) any
+  push to `main`, `master`, or a repo's configured `baseBranch`; protected-branch changes go through a
+  human-opened PR. The guard is agent-side **defense-in-depth** — it only fires when the agent runs it and
+  checks a single branch name (not `--all`/`--mirror`/tag/multi-refspec pushes), so pair it with **server-side
+  branch protection** on your remote for a hard guarantee. Reviewers and orchestrators still never push.
 
 ## Hardening when you adapt the kit
 
 - Keep the CI leak-scan (in `.github/workflows/validate.yml`) enabled so company/personal strings and a real
   `agents.config.yaml` can't be committed accidentally.
+- Enable **branch protection on your remote's default branch** — `git-push-guard` is the agent-side
+  complement, not a substitute for it.
 - Review any new tool grants you add to an agent's `tools` list.
