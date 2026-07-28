@@ -116,7 +116,7 @@ GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP 
 
 ```mermaid
 flowchart TD
-    A["Feature request / ticket"] --> P["Preflight (skills)<br/>agent-preflight-check · untrusted-input-guard<br/>tier · model routing · budget"]
+    A["Feature request / ticket"] --> P["Preflight (skills)<br/>agent-preflight-check · untrusted-input-guard<br/>episodic recall · tier · model routing · budget"]
 
     P --> ICP{"Goal + acceptance criteria?"}
     ICP -->|missing / ambiguous| BLK["status: blocked → ask_user"]
@@ -148,7 +148,7 @@ flowchart TD
     K -->|yes| IBT["Integration BUILD+TEST<br/>consumer builds after contract/version bump"]
     IBT --> L["review-orchestrator<br/>seams: contracts · versions · wiring"]
     L -->|seam finding| J
-    L -->|clean| M["LEARN<br/>write KB · delivery-metrics-capture"]
+    L -->|clean| M["LEARN<br/>write KB · kb-curate (periodic) · delivery-metrics-capture"]
 
     M --> N["Quality Gate (Definition of Done)<br/>all components green · no regression · 0 C/H/M"]
     N --> O["Local Commit<br/>+ push task branch<br/>(git-push-guard: no main/master)"]
