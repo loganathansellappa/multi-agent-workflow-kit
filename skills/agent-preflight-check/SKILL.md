@@ -32,6 +32,24 @@ The gate never hard-stops. `--override` silences the advisories entirely. Agents
 The sections below (tiering, model-routing, budget) document what the gate reports, and remain the
 guidance an agent applies when the script cannot be run (e.g. no shell available).
 
+## Episodic recall (advisory — reuse, don't rediscover)
+
+Before planning, check whether prior sessions already touched this repo or these files, so you build
+on past work instead of re-deriving it. This reads the local Copilot session store **read-only** and
+never blocks:
+
+```
+python <copilot-skills-dir>/agent-preflight-check/episodic_recall.py \
+  --repo <repo name> --files <changed/target files> \
+  --limit 5 [--exclude-session <current session id>]
+```
+
+- Prints a short digest of prior sessions on the same repo and prior sessions that touched the same
+  files (summary, date, branch). Exit code is always `0` — findings are advisory.
+- Degrades gracefully: if the store is missing or a query fails, it prints one note and continues.
+- Emit `recall: <n found|none>` in the handoff stamp. When it surfaces relevant prior work, skim that
+  context first and reuse decisions/paths rather than rediscovering them.
+
 ## Objective
 
 Catch environment and configuration problems early (paths, tools, repo access, branch readiness,
@@ -136,5 +154,5 @@ Optimize for the fewest tokens that preserve context and quality:
 ## Handoff evidence stamp (reliability)
 
 At handoff, emit one concise line so gate execution is auditable, e.g.:
-`preflight: ok | tier: standard | model: ok | budget: ok | loops: <n> | verify: pass/blocked | guard: on | metrics: written`.
+`preflight: ok | tier: standard | recall: <n found|none> | model: ok | budget: ok | loops: <n> | verify: pass/blocked | guard: on | metrics: written`.
 This turns soft "invoke skill" instructions into a verifiable signal.
