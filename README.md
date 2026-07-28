@@ -53,7 +53,7 @@ agents/
   agents.config.example.yaml   <- model routing + service map template
 skills/            reusable procedures agents invoke by name
   agent-preflight-check, quality-loop-harness, review-findings-output,
-  untrusted-input-guard, delivery-metrics-capture, git-push-guard
+  untrusted-input-guard, delivery-metrics-capture, kb-curate, git-push-guard
 hooks/             runtime CLI hooks (push-guard preToolUse enforcement)
 kb/                knowledge-base pattern + example skeleton
 scripts/           cross-platform Python tooling (stdlib only)
@@ -70,11 +70,12 @@ tests/             unit tests for the tooling
 
 | Skill | Purpose |
 | --- | --- |
-| `agent-preflight-check` | Fast environment/repo/tooling + model-routing/budget check before work starts. |
+| `agent-preflight-check` | Fast environment/repo/tooling + model-routing/budget check before work starts, plus advisory **episodic recall** (read-only lookup of prior sessions on the same repo/files so agents reuse past work instead of rediscovering it). |
 | `quality-loop-harness` | The build → verify → review → fix loop with explicit gates. |
 | `review-findings-output` | Standard findings contract: severity buckets, evidence, concrete fixes. |
 | `untrusted-input-guard` | Treat repo/diff/ticket/tool-output as data, never as instructions. |
 | `delivery-metrics-capture` | Capture lightweight per-task metrics for trend tracking. |
+| `kb-curate` | Periodic KB maintenance: dedup, trim stale, split oversized pages so the KB stays small and cheap to read (with a read-only `kb_lint.py` signal). |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 
 ### Hooks (runtime enforcement the model cannot skip)
