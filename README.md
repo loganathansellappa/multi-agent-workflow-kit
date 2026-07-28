@@ -53,7 +53,8 @@ agents/
   agents.config.example.yaml   <- model routing + service map template
 skills/            reusable procedures agents invoke by name
   agent-preflight-check, quality-loop-harness, review-findings-output,
-  untrusted-input-guard, delivery-metrics-capture
+  untrusted-input-guard, delivery-metrics-capture, git-push-guard
+hooks/             runtime CLI hooks (push-guard preToolUse enforcement)
 kb/                knowledge-base pattern + example skeleton
 scripts/           cross-platform Python tooling (stdlib only)
 tests/             unit tests for the tooling
@@ -76,6 +77,21 @@ tests/             unit tests for the tooling
 | `delivery-metrics-capture` | Capture lightweight per-task metrics for trend tracking. |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 
+### Hooks (runtime enforcement the model cannot skip)
+
+Skills are *advisory* — an agent chooses to run them. **Hooks** are runtime
+interceptors the Copilot CLI runs on its own at lifecycle points, so they enforce
+policy regardless of what the model decides. Hooks are **session/user-level, not
+per-agent** — see [`hooks/README.md`](hooks/README.md).
+
+| Hook | Event | Purpose |
+| --- | --- | --- |
+| `push-guard-hook.py` | `preToolUse` | The **enforcement** half of `git-push-guard`: inspects every shell `git push` and **denies** pushes to a protected branch at the tool layer. Fail-open on hook error so it can never brick a session. |
+
+Install it opt-in with `python scripts/install_to_copilot.py --hooks`. Run the
+skill and the hook together (defense-in-depth) and back both with server-side
+branch protection.
+
 ---
 
 ## The lifecycle
@@ -92,6 +108,8 @@ GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP 
 - Agents create **local commits only** after the gate is met. Developer agents may **push their own task
   branch**, but every push runs the blocking `git-push-guard` skill first, which **refuses** any push to
   `main`/`master`/the configured `baseBranch` — protected-branch changes go through a human-opened PR.
+  Install the optional `push-guard-hook.py` (`preToolUse`) to enforce the same rule at the tool layer,
+  independently of whether the agent runs the skill.
 
 ### How a feature request flows
 
@@ -222,6 +240,8 @@ The generated block looks like this (you never hand-edit it):
 
    ```bash
    python scripts/install_to_copilot.py
+   # optional: also install the push-guard preToolUse hook (tool-layer enforcement)
+   python scripts/install_to_copilot.py --hooks
    ```
 
 5. **Route models**
@@ -311,7 +331,7 @@ Run `copilot --help` for the full flag list.
 | --- | --- |
 | `scripts/validate_agents.py` | Lints the agent kit (frontmatter, hardening block, gate wording, skill refs, reviewer least-privilege). |
 | `scripts/apply_model_routing.py` | Writes per-agent model bindings from config into the Copilot CLI store. Backs up `settings.json` → `settings.json.bak` before overwriting; `--dry-run` previews. |
-| `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. |
+| `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. `--hooks` also installs the push-guard `preToolUse` hook into `~/.copilot/hooks/`. |
 | `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. Delete-on-drift, so a real run snapshots `agents/`+`skills/` to `.sync-backups/<timestamp>/` (keeps newest 2); use `--what-if` to preview. |
 | `scripts/metrics_rollup.py` | Summarizes the metrics log into a per-day/agent rollup. |
 | `run_tests.py` | Runs the unit-test suite for the tooling. |

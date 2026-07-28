@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "bash|powershell|shell|execute",
+        "type": "command",
+        "bash": "python3 \"$HOME/.copilot/hooks/push-guard-hook.py\" || exit 0",
+        "powershell": "python \"$env:USERPROFILE\\.copilot\\hooks\\push-guard-hook.py\"; exit 0",
+        "timeoutSec": 10,
+        "env": {
+          "PUSH_GUARD_CONFIG": ""
+        }
+      }
+    ]
+  }
+}

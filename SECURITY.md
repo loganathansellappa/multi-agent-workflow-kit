@@ -27,6 +27,11 @@ This kit ships **templates and tooling**, not a running service. The main securi
   human-opened PR. The guard is agent-side **defense-in-depth** — it only fires when the agent runs it and
   checks a single branch name (not `--all`/`--mirror`/tag/multi-refspec pushes), so pair it with **server-side
   branch protection** on your remote for a hard guarantee. Reviewers and orchestrators still never push.
+- **Tool-layer enforcement (hook).** Installing the optional `push-guard-hook.py` (`preToolUse`, see
+  [`hooks/README.md`](hooks/README.md)) makes the CLI itself inspect every shell `git push` and **deny**
+  protected-branch pushes — enforced regardless of whether the agent runs the skill, and it *does* catch
+  `--all`/`--mirror`. It is fail-open on hook error (so it can never brick a session), which is why it
+  complements — but does not replace — server-side branch protection.
 
 ## Hardening when you adapt the kit
 

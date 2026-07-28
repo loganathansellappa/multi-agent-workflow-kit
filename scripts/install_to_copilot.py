@@ -18,6 +18,12 @@ def main(argv=None):
     # Copilot CLI can discover them. Idempotent: safe to re-run after edits.
     ap = argparse.ArgumentParser(description="Install kit agents and skills into ~/.copilot.")
     ap.add_argument("--kit-root", default=str(Path(__file__).resolve().parent.parent))
+    ap.add_argument(
+        "--hooks",
+        action="store_true",
+        help="Also install the push-guard preToolUse hook into ~/.copilot/hooks "
+             "(push-guard-hook.py + push-guard.json). See hooks/README.md.",
+    )
     args = ap.parse_args(argv)
 
     kit_root = Path(args.kit_root)
@@ -49,6 +55,24 @@ def main(argv=None):
     for d in src_skills.iterdir():
         if d.is_dir():
             shutil.copytree(d, dest_skills / d.name, dirs_exist_ok=True)
+
+    # Optionally install the push-guard preToolUse hook. Kept opt-in because a
+    # hook fires on every shell tool call for the whole user, not just this kit;
+    # see hooks/README.md for the fail-open safety design.
+    if args.hooks:
+        src_hooks = kit_root / "hooks"
+        dest_hooks = dest_copilot / "hooks"
+        dest_hooks.mkdir(parents=True, exist_ok=True)
+        hook_script = src_hooks / "push-guard-hook.py"
+        hook_config = src_hooks / "hooks.example.json"
+        if hook_script.is_file() and hook_config.is_file():
+            shutil.copy2(hook_script, dest_hooks / "push-guard-hook.py")
+            # Register under a stable name so re-running is idempotent.
+            shutil.copy2(hook_config, dest_hooks / "push-guard.json")
+            print(f"Installed push-guard hook to {dest_hooks} "
+                  "(restart the CLI so hooks reload).")
+        else:
+            print("WARNING: hooks/ files not found; skipped hook install.", file=sys.stderr)
 
     print(f"Installed agents and skills to {dest_copilot}")
     return 0
