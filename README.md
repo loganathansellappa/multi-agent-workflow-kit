@@ -155,8 +155,10 @@ flowchart TD
 ```
 
 - The **orchestrator delegates**; each **developer agent owns its own** IMPLEMENT → BUILD+TEST → REVIEW → FIX
-  loop and returns a clean, reviewed diff. Reviewers are **read-only**. The flow always stops at a **local
-  commit** — a human pushes.
+  loop and returns a clean, reviewed diff. Reviewers are **read-only**. Developer agents commit and **push
+  their own task branch** (every push runs the blocking `git-push-guard` first, so `main`/`master`/the
+  configured `baseBranch` are refused); the orchestrator itself never pushes. A **human opens/merges the PR** —
+  agents never merge to a protected branch.
 
 ---
 
