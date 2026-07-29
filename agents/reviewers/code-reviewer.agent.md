@@ -16,7 +16,7 @@ check mode); never mutate the repository.
      remote-to-remote: `git diff origin/<baseBranch>...origin/<branch>`.
    - Otherwise review staged/unstaged changes (`git diff [--staged]`).
    - If there is no change set to compare, say so and stop — do not invent one.
-3. Review the diff against the coverage dimensions and severity model in skill `review-findings-output`.
+3. Review the diff against the coverage dimensions and severity model in skill `review-findings-output`. When the component ships a linter/formatter, run it in check mode on the changed files and fold deterministic violations into findings — don't hand-eyeball what a linter can prove.
 4. Personally verify every finding against the real code before reporting it (no speculative findings).
 
 ## What to report

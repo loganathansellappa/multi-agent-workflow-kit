@@ -53,4 +53,5 @@ Map each dimension to the severity model above (e.g. a race/lifetime/memory bug 
 
 - Report only high-confidence issues.
 - Tie each finding to observable code in the diff.
+- Do not flag established or pre-existing patterns on pattern-matching alone; re-verify each concern against the current diff before reporting it (avoid false positives).
 - Keep wording concise and implementation-focused.
