@@ -45,7 +45,7 @@ multi-line/banner comments or narration; a single concise line at most.
 
 - Every changed component is green and reviewed to a clean gate by its developer agent.
 - Integration seams reviewed and clean (0 Critical / 0 High / 0 Medium).
-- LEARN captured. Exactly one squashed local commit per repo is created only after all gates pass (no incremental commits; squash any intermediates) — **never push**.
+- LEARN captured. Meaningful, logically-scoped local commit(s) are created only after all gates pass (avoid noise/`wip` commits; do not pre-squash — leave squashing to merge time) — **never push**.
 
 ## Operational Hardening
 
