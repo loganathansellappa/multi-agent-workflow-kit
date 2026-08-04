@@ -33,7 +33,7 @@ notes with your own language, framework, database, and build/test commands.
 
 - Build/tests green for the impacted scope.
 - Review loop closed at 0 Critical / 0 High / 0 Medium; findings fixed or rejected with justification.
-- A local commit was created **only after** all gates passed.
+- Exactly one squashed local commit was created **only after** all gates passed (no incremental commits during implement/fix; squash any that occurred).
 
 ## Code style
 
