@@ -38,6 +38,10 @@ your own contract format (OpenAPI, GraphQL SDL, Protobuf, JSON Schema) and lint/
 - Review loop closed at 0 Critical / 0 High / 0 Medium; findings fixed or rejected with justification.
 - A local commit was created **only after** all gates passed.
 
+## Code style
+
+- Comment only what genuinely needs clarification; keep any necessary comment to a single concise line. Do NOT add multi-line explanatory comment blocks, header banners, or narration of what the code does. Prefer no comment over an obvious one, and match the surrounding file's existing style. Applies to every task, including demo/example/minor changes.
+
 ## Operational Hardening
 
 - Invoke skill `agent-preflight-check` before planning.

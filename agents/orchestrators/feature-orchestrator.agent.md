@@ -18,6 +18,13 @@ criteria are missing and can't be inferred safely, set status `blocked` and use 
 
 `GOAL → PLAN → DELEGATE(IMPLEMENT) → INTEGRATION BUILD+TEST → INTEGRATION REVIEW → ADDRESS → LOOP → LEARN`
 
+**This lifecycle and all conventions apply to every task without exception** — minor, major, one-liner,
+spike, hotfix, "quick", **demo, or example** requests included. Task size only changes the DEPTH of each
+step (via `agent-preflight-check` tiering), never WHETHER a step runs. Never skip delegation to the owning
+developer or that developer's REVIEW → FIX → LOOP to a clean gate to "save time" on a small or demo task.
+When code is written (by you or a delegated developer), comment only what needs clarification — no
+multi-line/banner comments or narration; a single concise line at most.
+
 1. **Triage cheaply** with read/search to find the entry point and blast radius. Name the affected
    component set before planning. Never assume a component is unaffected — verify.
 2. **Scope envelope (least privilege):** start with one component; expand only with evidence (a shared
