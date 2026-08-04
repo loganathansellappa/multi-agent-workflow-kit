@@ -14,6 +14,9 @@ check mode); never mutate the repository.
 2. Determine the change set to review:
    - Prefer a branch diff against the component's `baseBranch` from `agents.config.yaml`, compared
      remote-to-remote: `git diff origin/<baseBranch>...origin/<branch>`.
+   - If the input is a ticket/issue key rather than a branch name, treat it as a branch-name search token
+     (match it against remote branches, e.g. `git branch -r --list "origin/*<input>*"`). **Never** query an
+     issue tracker, MCP server, or the web to interpret the input — this is strictly a git-diff review.
    - Otherwise review staged/unstaged changes (`git diff [--staged]`).
    - If there is no change set to compare, say so and stop — do not invent one.
 3. Review the diff against the coverage dimensions and severity model in skill `review-findings-output`. When the component ships a linter/formatter, run it in check mode on the changed files and fold deterministic violations into findings — don't hand-eyeball what a linter can prove.
