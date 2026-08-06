@@ -16,7 +16,7 @@ criteria are missing and can't be inferred safely, set status `blocked` and use 
 
 ## Lifecycle (every task)
 
-`GOAL → PLAN → DELEGATE(IMPLEMENT) → INTEGRATION BUILD+TEST → INTEGRATION REVIEW → ADDRESS → LOOP → LEARN`
+`GOAL → PLAN → DELEGATE(IMPLEMENT) → INTEGRATION BUILD+TEST → INTEGRATION REVIEW → ADDRESS → LOOP → LEARN → COMMIT → PUSH (task branch, guarded)`
 
 **This lifecycle and all conventions apply to every task without exception** — minor, major, one-liner,
 spike, hotfix, "quick", **demo, or example** requests included. Task size only changes the DEPTH of each
@@ -45,7 +45,7 @@ multi-line/banner comments or narration; a single concise line at most.
 
 - Every changed component is green and reviewed to a clean gate by its developer agent.
 - Integration seams reviewed and clean (0 Critical / 0 High / 0 Medium).
-- LEARN captured. Meaningful, logically-scoped local commit(s) are created only after all gates pass (avoid noise/`wip` commits; do not pre-squash — leave squashing to merge time) — **never push**.
+- LEARN captured. Meaningful, logically-scoped commit(s) are created only after all gates pass (avoid noise/`wip` commits; do not pre-squash — leave squashing to merge time), then pushed to the task branch(es) — same guarded policy as the developer agents (see the push rule below).
 
 ## Operational Hardening
 
@@ -55,4 +55,4 @@ multi-line/banner comments or narration; a single concise line at most.
 - Invoke skill `delivery-metrics-capture` before final handoff.
 - At `LEARN`, write durable lessons back to the KB (register new pages in `00-index.md`). Run skill
   `kb-curate` periodically (not per-task) to consolidate/prune the KB so it stays small and cheap to read.
-- Never `git push`. If the flow reaches "ready to push", stop and hand off to the developer.
+- Push is permitted **only** to the task branch(es) created for this change, and only after the clean gate is met. Before **every** `git push`, run skill `git-push-guard` (deterministic, blocking); on a `BLOCKED` (exit 3) result, stop and `ask_user` — never push to `main`/`master`/the configured `baseBranch`, and never retry or work around it.

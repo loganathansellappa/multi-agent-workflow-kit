@@ -106,11 +106,11 @@ GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP 
 - **Clean gate** = **0 Critical / 0 High / 0 Medium** open findings.
 - **One pass is not a loop** — every fix re-triggers BUILD+TEST → REVIEW on the updated diff.
 - **LEARN** writes durable lessons back to the KB so the next task is faster.
-- Agents create **local commits only** after the gate is met. Developer agents may **push their own task
-  branch**, but every push runs the blocking `git-push-guard` skill first, which **refuses** any push to
-  `main`/`master`/the configured `baseBranch` — protected-branch changes go through a human-opened PR.
-  Install the optional `push-guard-hook.py` (`preToolUse`) to enforce the same rule at the tool layer,
-  independently of whether the agent runs the skill.
+- After the gate is met, agents create commits and **push to the task branch** — both the developer agents
+  and the `feature-orchestrator`. Every push runs the blocking `git-push-guard` skill first, which
+  **refuses** any push to `main`/`master`/the configured `baseBranch` — protected-branch changes go through
+  a human-opened PR. Install the optional `push-guard-hook.py` (`preToolUse`) to enforce the same rule at
+  the tool layer, independently of whether the agent runs the skill.
 
 ### How a feature request flows
 
@@ -155,9 +155,9 @@ flowchart TD
 ```
 
 - The **orchestrator delegates**; each **developer agent owns its own** IMPLEMENT → BUILD+TEST → REVIEW → FIX
-  loop and returns a clean, reviewed diff. Reviewers are **read-only**. Developer agents commit and **push
-  their own task branch** (every push runs the blocking `git-push-guard` first, so `main`/`master`/the
-  configured `baseBranch` are refused); the orchestrator itself never pushes. A **human opens/merges the PR** —
+  loop and returns a clean, reviewed diff. Reviewers are **read-only**. Both the developer agents and the
+  orchestrator commit and **push to the task branch** (every push runs the blocking `git-push-guard` first,
+  so `main`/`master`/the configured `baseBranch` are refused). A **human opens/merges the PR** —
   agents never merge to a protected branch.
 
 ---
