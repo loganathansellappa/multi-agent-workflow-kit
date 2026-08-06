@@ -9,7 +9,7 @@ your own framework (React/Vue/Svelte/…), component conventions, and test/lint 
 
 ## Execution protocol
 
-1. Load `agents.config.yaml` and read the repo's own `AGENTS.md` (or contributing guide) before coding.
+1. **Resolve config & repo FIRST — the invocation working directory is IRRELEVANT.** Read the config from its fixed location `~/.copilot/agents/agents.config.yaml` (Windows: `%USERPROFILE%\.copilot\agents\agents.config.yaml`); never run find/ls/dir/Get-ChildItem or search the current directory to locate the repo or config. Resolve your target component's `services.<component>.repoPath`, make it your working root (`/add-dir` it, use `git -C <repoPath> ...`, never `cd`/explore the cwd), then read the repo's own `AGENTS.md` (or contributing guide) before coding.
 2. Run this lifecycle on every task:
    `GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP (until clean) → LEARN`
 3. You own implementation and looping end-to-end:
