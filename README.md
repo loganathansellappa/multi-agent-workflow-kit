@@ -232,6 +232,12 @@ The generated block looks like this (you never hand-edit it):
    Edit `agents.config.yaml`: set `<REPO_ROOT>`/`<REPORTS>`, list your components under `services`, and
    pick each agent's model tier.
 
+   > **How agents find your repos:** once installed (step 4), every agent reads config from the fixed
+   > location `~/.copilot/agents/agents.config.yaml` and resolves each component's `services.<component>.repoPath`
+   > as its working root. Agents do **not** explore the directory you launch them from — so
+   > `copilot --agent code-reviewer -p "<branch/ticket>" --allow-all-tools` works from anywhere and still
+   > operates on the configured repo, never the current folder.
+
 3. **Validate everything is wired correctly**
 
    ```bash

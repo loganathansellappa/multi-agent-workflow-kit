@@ -57,6 +57,7 @@ config files) before expensive work begins.
 
 ## Standard checks
 
+0. **Locate config deterministically — do NOT explore the working directory.** The config lives at a fixed path: `~/.copilot/agents/agents.config.yaml` (Windows: `%USERPROFILE%\.copilot\agents\agents.config.yaml`). Read it there; never run find/ls/dir/Get-ChildItem or search the invocation cwd to discover it or the repos. The directory the agent was launched from is irrelevant — resolve every repo from `services.<component>.repoPath` and operate under those paths (`/add-dir`, `git -C <repoPath>`), never the cwd.
 1. Confirm required repo path(s) from `agents.config.yaml` exist and are readable.
 2. Confirm required tools for the scope are available (for example: `git`, and whatever your stack
    uses to build/test/lint — `npm`/`yarn`, `python`, `go`, `dotnet`, `make`, etc.).
