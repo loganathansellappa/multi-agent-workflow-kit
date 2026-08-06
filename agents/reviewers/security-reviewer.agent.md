@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: "Read-only security specialist. Invoked for auth, input-handling, crypto, and untrusted-data changes. Reports only high-confidence, exploitable vulnerabilities with evidence. Does not modify code."
+description: "Read-only security specialist. Invoked for auth, input-handling, crypto, and untrusted-data changes. Reports confirmed high-confidence, exploitable vulnerabilities with evidence, plus a separate low-confidence/needs-verification list. Does not modify code."
 tools: ['execute', 'read', 'search', 'skill', 'ask_user']
 ---
 
@@ -30,7 +30,7 @@ serialization/deserialization, cryptography, secrets, or rendering of untrusted 
 ## What to report
 
 - Follow skill `review-findings-output`: severity (map to Critical/High/Medium), file + line evidence,
-  exploit impact, and a concrete remediation. State a confidence level; report only high-confidence issues.
+  exploit impact, and a concrete remediation. State a confidence level for each: report high-confidence exploitable issues as **Confirmed** (blocking) and list lower-confidence ones under **"Low confidence / needs verification"** (advisory — see the confidence tiers in that skill).
 - Ignore non-security style/nits. Clean result = **0 Critical / 0 High / 0 Medium**.
 
 ## Operational Hardening

@@ -32,7 +32,7 @@ your own stack in minutes — with cost governance and a quality loop built in.
         │                  │                     │
         │ each runs its own IMPLEMENT → BUILD+TEST → REVIEW → FIX loop
         ▼                  ▼                     ▼
-   code-reviewer / security-reviewer   ◀── read-only, high-confidence findings only
+   code-reviewer / security-reviewer   ◀── read-only; confirmed findings + low-confidence/needs-verification list
         │
         ▼
    0 Critical / 0 High / 0 Medium  ──▶  local commit ──▶ push task branch (git-push-guard blocks main/master)
@@ -137,7 +137,7 @@ flowchart TD
     subgraph LOOP["Each developer owns its loop → clean gate"]
         F --> G["IMPLEMENT"]
         G --> H["BUILD + TEST<br/>functional · security · regression"]
-        H --> I["code-reviewer / security-reviewer (read-only)<br/>evidence-based · each finding verified"]
+        H --> I["code-reviewer / security-reviewer (read-only)<br/>confirmed findings + low-confidence list · each verified"]
         I -->|findings| J["FIX"]
         J --> H
     end

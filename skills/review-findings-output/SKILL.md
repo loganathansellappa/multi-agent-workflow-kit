@@ -49,9 +49,24 @@ Map each dimension to the severity model above (e.g. a race/lifetime/memory bug 
    - exact change snippet (before/after or corrected code)
    - fix specific to the actual diff (no generic advice)
 
+## Confidence tiers (surface every concern — separate confirmed from speculative)
+
+Report findings in TWO tiers so nothing real is silently dropped, without polluting the clean gate with guesses:
+
+1. **Confirmed findings** (high-confidence, evidence-backed) — the primary report. Each is tied to
+   observable code in the diff and verified against the real code, then bucketed by the canonical severity
+   model above. **Only Confirmed findings count toward the clean gate.**
+2. **Low confidence / needs verification** — plausible concerns you could not fully prove from the diff
+   alone (missing context, unclear call site, possible-but-unproven race/edge case). List each with:
+   - what and where (file/line)
+   - why it is uncertain (what evidence is missing)
+   - how to confirm or refute it (the specific check to run)
+   These are **advisory only and do NOT block the clean gate** (a clean gate is 0 Critical / 0 High / 0
+   Medium *Confirmed* findings). Never promote one to a blocking finding without verifying it first.
+
 ## Guardrails
 
-- Report only high-confidence issues.
-- Tie each finding to observable code in the diff.
+- Surface every real concern — do not silently drop it: verified → Confirmed; plausible but unproven → Low confidence / needs verification.
+- No fabrication in either tier: every item must reference code that actually exists in the diff/repo. Never invent files, line numbers, symbols, config keys, or behavior. Uncertainty about impact goes to the Low-confidence tier; it is never a licence to guess.
 - Do not flag established or pre-existing patterns on pattern-matching alone; re-verify each concern against the current diff before reporting it (avoid false positives).
 - Keep wording concise and implementation-focused.
