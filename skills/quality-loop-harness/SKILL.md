@@ -23,6 +23,11 @@ Use this skill to run and enforce repeatable engineering loops.
 - **All coverage dimensions checked** (see skill `review-findings-output` → "Coverage dimensions"):
   functional + regression + non-functional (perf/memory/lifetime) + concurrency + security. Mark N/A
   explicitly, never silently.
+- **Low-confidence findings dispositioned.** Every "Low confidence / needs verification" item raised in
+  REVIEW (see skill `review-findings-output` → "Confidence tiers") is resolved before the gate closes —
+  either verify → promote to a Confirmed finding and fix it, or dismiss it with a one-line, code-cited
+  reason. None may be carried past the gate unexamined. Reviewers are read-only and only report these; the
+  developer/orchestrator owns the disposition.
 - Verification commands for changed scope are successful, or blockers are explicit and unrelated.
 
 ## Required evidence

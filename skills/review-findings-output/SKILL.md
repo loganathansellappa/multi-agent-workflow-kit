@@ -61,8 +61,12 @@ Report findings in TWO tiers so nothing real is silently dropped, without pollut
    - what and where (file/line)
    - why it is uncertain (what evidence is missing)
    - how to confirm or refute it (the specific check to run)
-   These are **advisory only and do NOT block the clean gate** (a clean gate is 0 Critical / 0 High / 0
-   Medium *Confirmed* findings). Never promote one to a blocking finding without verifying it first.
+   These do NOT count as Confirmed findings and never block the gate on their own (a clean gate is 0
+   Critical / 0 High / 0 Medium *Confirmed* findings). But they must not be silently carried past "done":
+   the consuming developer/orchestrator must **disposition each one** before the clean gate closes — verify
+   → promote to Confirmed (then fix), or dismiss with a one-line, code-cited reason (see skill
+   `quality-loop-harness` → "Clean gate"). Reviewers are read-only and only report them; never promote one
+   to a blocking finding without verifying it first.
 
 ## Guardrails
 
