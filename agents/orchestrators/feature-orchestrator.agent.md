@@ -45,6 +45,7 @@ multi-line/banner comments or narration; a single concise line at most.
 
 - Every changed component is green and reviewed to a clean gate by its developer agent.
 - Integration seams reviewed and clean (0 Critical / 0 High / 0 Medium).
+- Every low-confidence / needs-verification finding from review is dispositioned before done — verify → promote to Confirmed and fix, or dismiss with a one-line code-cited reason (none carried past the gate unexamined; reviewers only report them, the orchestrator/developer owns the disposition).
 - LEARN captured. Meaningful, logically-scoped commit(s) are created only after all gates pass (avoid noise/`wip` commits; do not pre-squash — leave squashing to merge time), then pushed to the task branch(es) — same guarded policy as the developer agents (see the push rule below).
 
 ## Operational Hardening
