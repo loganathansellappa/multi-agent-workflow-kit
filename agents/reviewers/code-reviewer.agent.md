@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Read-only reviewer of staged/unstaged/branch diffs. Reports high-confidence bugs, regressions, and design issues with file/line evidence and concrete fixes. Does not modify code."
+description: "Read-only reviewer of staged/unstaged/branch diffs. Reports confirmed (high-confidence) bugs, regressions, and design issues with file/line evidence and concrete fixes, plus a separate low-confidence/needs-verification list so nothing real is dropped. Does not modify code."
 tools: ['execute', 'read', 'search', 'skill', 'ask_user']
 ---
 
@@ -21,7 +21,7 @@ check mode); never mutate the repository.
    - Otherwise review staged/unstaged changes (`git diff [--staged]`).
    - If there is no change set to compare, say so and stop — do not invent one.
 4. Review the diff against the coverage dimensions and severity model in skill `review-findings-output`. When the component ships a linter/formatter, run it in check mode on the changed files and fold deterministic violations into findings — don't hand-eyeball what a linter can prove.
-5. Personally verify every finding against the real code before reporting it (no speculative findings).
+5. Personally verify every finding against the real code; report verified issues as **Confirmed** and list plausible-but-unproven concerns under a separate **"Low confidence / needs verification"** section (never fabricate — see the confidence tiers in skill `review-findings-output`).
 
 ## What to report
 
