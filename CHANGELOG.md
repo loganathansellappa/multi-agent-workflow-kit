@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-08-10
+
+### Added
+- **Mandatory agent-review gate in CONTRIBUTING.** Any change to a `*.agent.md` or `skills/**/SKILL.md`
+  must get a dedicated review pass (a custom-agent/instruction reviewer if your setup ships one, otherwise
+  self-review against the "Adding or changing an agent" checklist) and all issues resolved before opening a
+  PR — applies to every edit, including minor/wording-only changes.
+
+### Changed
+- Reverted the "exactly one squashed local commit" requirement across developers and the feature
+  orchestrator in favor of meaningful, logically-scoped commits (no pre-squash; squashing left to merge time).
+
 ## [1.1.0] - 2026
 
 ### Added
