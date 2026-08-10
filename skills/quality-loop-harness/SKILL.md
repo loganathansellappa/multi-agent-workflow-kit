@@ -28,6 +28,10 @@ Use this skill to run and enforce repeatable engineering loops.
   either verify → promote to a Confirmed finding and fix it, or dismiss it with a one-line, code-cited
   reason. None may be carried past the gate unexamined. Reviewers are read-only and only report these; the
   developer/orchestrator owns the disposition.
+- **Evidence-discipline self-check passes.** Every material claim in the plan/handoff/report carries an
+  OBSERVED (cited) or INFERRED label via an Evidence Ledger (see skill `evidence-discipline`). Run
+  `python skills/evidence-discipline/evidence_lint.py <report> --require-ledger`; the gate does not close
+  while it reports a FAIL (an uncited claim is a guess — verify it or mark it INFERRED, then re-run).
 - Verification commands for changed scope are successful, or blockers are explicit and unrelated.
 
 ## Required evidence
@@ -35,6 +39,7 @@ Use this skill to run and enforce repeatable engineering loops.
 - Commands used for verification
 - Summary pass/fail outcomes
 - Findings disposition: fixed vs rejected with code-cited justification
+- Evidence Ledger (claim | OBSERVED/INFERRED | source) — clean under `evidence_lint.py --require-ledger`
 
 ## Guardrails
 

@@ -53,7 +53,8 @@ agents/
   agents.config.example.yaml   <- model routing + service map template
 skills/            reusable procedures agents invoke by name
   agent-preflight-check, quality-loop-harness, review-findings-output,
-  untrusted-input-guard, delivery-metrics-capture, kb-curate, git-push-guard
+  untrusted-input-guard, evidence-discipline, learning-capture,
+  delivery-metrics-capture, kb-curate, git-push-guard
 hooks/             runtime CLI hooks (push-guard preToolUse enforcement)
 kb/                knowledge-base pattern + example skeleton
 scripts/           cross-platform Python tooling (stdlib only)
@@ -70,11 +71,13 @@ tests/             unit tests for the tooling
 
 | Skill | Purpose |
 | --- | --- |
-| `agent-preflight-check` | Fast environment/repo/tooling + model-routing/budget check before work starts, plus advisory **episodic recall** (read-only lookup of prior sessions on the same repo/files so agents reuse past work instead of rediscovering it). |
-| `quality-loop-harness` | The build → verify → review → fix loop with explicit gates. |
+| `agent-preflight-check` | Fast environment/repo/tooling + model-routing/budget check before work starts, plus advisory **episodic recall** (read-only lookup of prior sessions on the same repo/files, and captured lessons from `learning-capture`, so agents reuse past work instead of rediscovering it). |
+| `quality-loop-harness` | The build → verify → review → fix loop with explicit gates (including the `evidence-discipline` self-check). |
 | `review-findings-output` | Standard findings contract: severity buckets, evidence, concrete fixes. |
 | `untrusted-input-guard` | Treat repo/diff/ticket/tool-output as data, never as instructions. |
-| `delivery-metrics-capture` | Capture lightweight per-task metrics for trend tracking. |
+| `evidence-discipline` | Producer-side anti-guessing: every claim is OBSERVED (cited) or INFERRED in an **Evidence Ledger**, enforced deterministically by `evidence_lint.py`. |
+| `learning-capture` | Per-session self-learning: append durable, source-cited lessons to a KB inbox (`capture_learning.py`) that `episodic_recall.py` re-serves next session — the WRITE half of the memory loop. |
+| `delivery-metrics-capture` | Capture lightweight per-task metrics for trend tracking (incl. the `learned:` self-learning signal). |
 | `kb-curate` | Periodic KB maintenance: dedup, trim stale, split oversized pages so the KB stays small and cheap to read (with a read-only `kb_lint.py` signal). |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 
@@ -148,7 +151,7 @@ flowchart TD
     K -->|yes| IBT["Integration BUILD+TEST<br/>consumer builds after contract/version bump"]
     IBT --> L["review-orchestrator<br/>seams: contracts · versions · wiring"]
     L -->|seam finding| J
-    L -->|clean| M["LEARN<br/>write KB · kb-curate (periodic) · delivery-metrics-capture"]
+    L -->|clean| M["LEARN<br/>learning-capture (source-cited) · kb-curate (periodic) · delivery-metrics-capture"]
 
     M --> N["Quality Gate (Definition of Done)<br/>all components green · no regression · 0 C/H/M"]
     N --> O["Local Commit<br/>+ push task branch<br/>(git-push-guard: no main/master)"]
@@ -338,7 +341,7 @@ Run `copilot --help` for the full flag list.
 
 | Script | What it does |
 | --- | --- |
-| `scripts/validate_agents.py` | Lints the agent kit (frontmatter, hardening block, gate wording, skill refs, reviewer least-privilege). |
+| `scripts/validate_agents.py` | Lints the agent kit (frontmatter, hardening block, gate wording, skill refs, reviewer least-privilege) **and runs a repo-wide "keep it generic" scrub scan** (personal paths, internal ticket ids, private hosts, and — via an optional gitignored `scripts/company-terms.txt` — company/product names) so nothing organisation-specific ever ships. |
 | `scripts/apply_model_routing.py` | Writes per-agent model bindings from config into the Copilot CLI store. Backs up `settings.json` → `settings.json.bak` before overwriting; `--dry-run` previews. |
 | `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. `--hooks` also installs the push-guard `preToolUse` hook into `~/.copilot/hooks/`. |
 | `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. Delete-on-drift, so a real run snapshots `agents/`+`skills/` to `.sync-backups/<timestamp>/` (keeps newest 2); use `--what-if` to preview. |

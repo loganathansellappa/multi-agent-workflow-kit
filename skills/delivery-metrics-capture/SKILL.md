@@ -20,6 +20,7 @@ Log small, comparable execution metrics so teams can improve throughput, quality
 5. Verification status (pass / blocked / partial)
 6. Blocker class when blocked (env/config/test/data/dependency)
 7. Cost signals: token usage snapshot when available (drives the budget/alert loop)
+8. Learning captured: count of durable lessons written via skill `learning-capture` (`0`/`none` if nothing durable) — the self-learning signal
 
 ## Output behavior
 
@@ -36,7 +37,7 @@ Append one JSON line per handoff to a metrics log so the team can review trends 
 - One JSON object per line, for example:
 
 ```json
-{"ts":"2026-01-01T00:00:00Z","agent":"backend-developer","task_type":"implementation","tier":"standard","scope":["backend"],"loop_count":2,"verification":"pass","blocker_class":null,"tokens":"unknown"}
+{"ts":"2026-01-01T00:00:00Z","agent":"backend-developer","task_type":"implementation","tier":"standard","scope":["serviceA"],"loop_count":2,"verification":"pass","blocker_class":null,"tokens":"unknown","learned":1}
 ```
 
 - Never write secrets, tokens, source code, or PII into the log — metadata only.
