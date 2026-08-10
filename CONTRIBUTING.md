@@ -16,6 +16,12 @@ starter kit — contributions should keep it that way.
   (different indentation, mid-line comments, multi-line tiers) can make the parser match nothing and exit
   with `ERROR: no models.<...> found`. If you need richer config, add a real parser behind an optional
   dependency rather than loosening the regexes silently.
+- **Review agent/skill changes before you commit (mandatory gate — do not skip).** Any change to a
+  `*.agent.md` or `skills/**/SKILL.md` must get a dedicated review pass before it lands: run it past a
+  custom-agent / instruction reviewer if your setup ships one, otherwise self-review against the "Adding or
+  changing an agent" checklist below, and resolve any issue (contradictions, bloat, tool/model mismatch,
+  reviewer scope-lock regressions) first. The `validate_agents.py` + test checks do NOT cover this. Apply it
+  to EVERY agent/skill edit, including minor or wording-only changes.
 
 ## Before you open a PR
 
@@ -27,6 +33,11 @@ python run_tests.py
 ```
 
 The CI workflow runs the same two commands.
+
+**Agent-review gate (mandatory).** These two checks do not review instruction quality. For any changed
+`*.agent.md` or `skills/**/SKILL.md`, also run a review pass on the changes (a dedicated agent-instruction
+reviewer if you have one, otherwise self-review against "Adding or changing an agent" below) and resolve
+every issue before opening the PR — never skip it for minor/wording-only edits.
 
 ## Adding or changing an agent
 
