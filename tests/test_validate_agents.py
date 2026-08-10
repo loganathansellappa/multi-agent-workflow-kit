@@ -41,6 +41,13 @@ def run(root):
     return r.returncode, (r.stdout + r.stderr)
 
 
+def run_terms(root, terms):
+    # Run the validator with an explicit --terms denylist file.
+    r = subprocess.run([sys.executable, str(VALIDATE), "--kit-root", str(root),
+                        "--terms", str(terms)], capture_output=True, text=True)
+    return r.returncode, (r.stdout + r.stderr)
+
+
 class ValidateAgents(unittest.TestCase):
     def test_passes_clean_kit(self):
         # A well-formed agent passes with exit 0.
@@ -92,6 +99,66 @@ Body. Operational Hardening.
             code, text = run(k)
             self.assertEqual(code, 1)
             self.assertIn("nonexistent-skill", text)
+        finally:
+            shutil.rmtree(k, ignore_errors=True)
+
+
+class ScrubScan(unittest.TestCase):
+    """Repo-wide 'keep it generic' scrub scan in validate_agents.py."""
+
+    def _kit_with_doc(self, body):
+        k = new_kit()
+        add_agent(k, "developers", "sample-developer.agent.md", GOOD_DEV)
+        (k / "docs").mkdir(exist_ok=True)
+        (k / "docs" / "note.md").write_text(body, encoding="utf-8")
+        return k
+
+    def test_flags_internal_ticket_id(self):
+        k = self._kit_with_doc("See PROJ-4321 for the incident details.\n")
+        try:
+            code, text = run(k)
+            self.assertEqual(code, 1)
+            self.assertIn("PROJ-4321", text)
+        finally:
+            shutil.rmtree(k, ignore_errors=True)
+
+    def test_allows_standards_and_placeholder_tokens(self):
+        # ISO-8601 (standard) and TICKET-123 (placeholder num) must NOT be flagged.
+        k = self._kit_with_doc("Timestamps are ISO-8601. Try TICKET-123 as a demo.\n")
+        try:
+            code, text = run(k)
+            self.assertEqual(code, 0, msg=text)
+        finally:
+            shutil.rmtree(k, ignore_errors=True)
+
+    def test_flags_personal_home_path(self):
+        k = self._kit_with_doc("Config at C:\\Users\\jdoe\\.copilot lives there.\n")
+        try:
+            code, text = run(k)
+            self.assertEqual(code, 1)
+            self.assertIn("personal path", text)
+        finally:
+            shutil.rmtree(k, ignore_errors=True)
+
+    def test_flags_company_term_from_denylist(self):
+        k = self._kit_with_doc("The AcmeCorp service handles this.\n")
+        terms = k / "terms.txt"
+        terms.write_text("# names\nAcmeCorp\n", encoding="utf-8")
+        try:
+            code, text = run_terms(k, terms)
+            self.assertEqual(code, 1)
+            self.assertIn("AcmeCorp", text)
+        finally:
+            shutil.rmtree(k, ignore_errors=True)
+
+    def test_denylist_word_boundary_no_false_positive(self):
+        # A denylist term must not match inside an unrelated word.
+        k = self._kit_with_doc("The app concatenates buffers cleanly.\n")
+        terms = k / "terms.txt"
+        terms.write_text("cat\n", encoding="utf-8")
+        try:
+            code, text = run_terms(k, terms)
+            self.assertEqual(code, 0, msg=text)
         finally:
             shutil.rmtree(k, ignore_errors=True)
 

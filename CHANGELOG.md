@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026
+
+### Added
+- **`evidence-discipline` skill (producer-side anti-guessing).** Every material claim is labelled
+  OBSERVED (cited) or INFERRED in an **Evidence Ledger**, enforced deterministically by
+  `skills/evidence-discipline/evidence_lint.py` and wired into the `quality-loop-harness` clean gate.
+- **`learning-capture` skill (per-session self-learning).** `capture_learning.py` appends durable,
+  source-cited lessons to an append-only KB inbox (`lessons-log.jsonl`); `episodic_recall.py` re-serves
+  them next session (`recall-lessons:`), closing the learn→recall memory loop. Wired into all developers
+  and the feature-orchestrator, with a `learned:` handoff stamp field in `delivery-metrics-capture`.
+- **Repo-wide "keep it generic" scrub scan in `validate_agents.py`.** Deterministically fails the build
+  on personal paths, internal ticket ids, or private hosts, and — via an optional gitignored
+  `scripts/company-terms.txt` denylist — on company/product names, so nothing organisation-specific ever
+  ships. Enforces the CONTRIBUTING "keep it generic" policy in code.
+
+### Changed
+- `agent-preflight-check` recall now accepts `--kb-root` and surfaces captured lessons.
+- Developer and orchestrator agents now run the evidence self-check and never-skip learning capture.
+
 ## [1.0.0] - 2025
 
 ### Added

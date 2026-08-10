@@ -9,5 +9,8 @@ agents/agents.config.yaml
 .secrets/
 *.token
 
+# Local denylist for the "keep it generic" scrub scan — names live here, never in the repo
+scripts/company-terms.txt
+
 # Rollback snapshots written by sync_from_live.py — local-only, never commit
 .sync-backups/

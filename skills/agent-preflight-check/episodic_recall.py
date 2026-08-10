@@ -28,16 +28,18 @@ OUTPUT
 ------
 A compact, human- and model-readable digest, e.g.:
 
-  recall: 3 prior session(s) on 'webplatformservices'
+  recall: 3 prior session(s) on 'serviceA'
     - 2026-07-23 | Update Agent Permissions | branch=feature/x
-    - 2026-07-22 | Password change timestamp | branch=main
+    - 2026-07-22 | Adjust retry budget | branch=main
   recall-files: 1 prior session touched 'openapi.yaml'
-    - 2026-07-20 | Implement Password Change Timestamp
+    - 2026-07-20 | Add pagination to list endpoint
 
 Stdlib only (sqlite3); cross-platform; read-only; no network.
 """
 import argparse
+import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -45,6 +47,60 @@ from pathlib import Path
 
 def default_db():
     return str(Path.home() / ".copilot" / "session-store.db")
+
+
+def _normalize(text):
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def read_captured_lessons(kb_root):
+    """Read <kb-root>/lessons-log.jsonl written by learning-capture (best-effort)."""
+    if not kb_root:
+        return []
+    p = Path(kb_root) / "lessons-log.jsonl"
+    if not p.is_file():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+            if not e.get("none"):
+                out.append(e)
+        except Exception:
+            continue
+    return out
+
+
+def recall_lessons(kb_root, repo, files, limit):
+    """Surface captured lessons matching this repo / files / any (loop closure)."""
+    lessons = read_captured_lessons(kb_root)
+    if not lessons:
+        return
+    repo_l = _normalize(repo)
+    file_bases = [os.path.basename(f).lower() for f in files if f.strip()]
+
+    def matches(e):
+        if not repo_l and not file_bases:
+            return True
+        hay = " ".join([
+            _normalize(e.get("repo", "")), _normalize(e.get("lesson", "")),
+            _normalize(e.get("source", "")), _normalize(" ".join(e.get("tags", []))),
+        ])
+        if repo_l and repo_l in hay:
+            return True
+        return any(b in hay for b in file_bases)
+
+    hits = [e for e in lessons if matches(e)][-limit:]
+    if not hits:
+        return
+    print(f"recall-lessons: {len(hits)} captured lesson(s) may apply")
+    for e in hits:
+        layer = f" | {e['layer']}" if e.get("layer") else ""
+        src = f" (src: {e['source']})" if e.get("source") else ""
+        print(f"  - {e.get('date','?')}{layer} | {e.get('lesson','').strip()}{src}")
 
 
 def connect_ro(db_path):
@@ -97,7 +153,16 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=5, help="Max rows per section (default 5)")
     ap.add_argument("--exclude-session", default="", help="Session id to exclude (usually the current one)")
     ap.add_argument("--db", default=os.environ.get("SESSION_STORE_DB", default_db()))
+    ap.add_argument("--kb-root", default=os.environ.get("KB_ROOT", ""),
+                    help="KB root; also surfaces captured lessons from <kb-root>/lessons-log.jsonl")
     args = ap.parse_args(argv)
+
+    # Captured-lessons recall is independent of the session store, so run it even
+    # when the store is missing. Advisory: never fails.
+    try:
+        recall_lessons(args.kb_root, args.repo, [x for x in args.files.split(",")], args.limit)
+    except Exception:
+        pass
 
     if not args.repo and not args.files:
         print("recall: skipped (no --repo/--files given)")

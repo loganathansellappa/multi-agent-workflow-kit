@@ -41,6 +41,7 @@ never blocks:
 ```
 python <copilot-skills-dir>/agent-preflight-check/episodic_recall.py \
   --repo <repo name> --files <changed/target files> \
+  --kb-root <path to your KB dir> \
   --limit 5 [--exclude-session <current session id>]
 ```
 
@@ -49,6 +50,9 @@ python <copilot-skills-dir>/agent-preflight-check/episodic_recall.py \
 - Degrades gracefully: if the store is missing or a query fails, it prints one note and continues.
 - Emit `recall: <n found|none>` in the handoff stamp. When it surfaces relevant prior work, skim that
   context first and reuse decisions/paths rather than rediscovering them.
+- With `--kb-root`, it also reads `<kb-root>/lessons-log.jsonl` (written by skill `learning-capture`) and
+  prints `recall-lessons: <n>` — captured lessons from prior sessions on this repo/files. This closes the
+  learn→recall loop: what one session captures, the next session re-serves. Skim these before planning.
 
 ## Objective
 
@@ -155,5 +159,6 @@ Optimize for the fewest tokens that preserve context and quality:
 ## Handoff evidence stamp (reliability)
 
 At handoff, emit one concise line so gate execution is auditable, e.g.:
-`preflight: ok | tier: standard | recall: <n found|none> | model: ok | budget: ok | loops: <n> | verify: pass/blocked | guard: on | metrics: written`.
-This turns soft "invoke skill" instructions into a verifiable signal.
+`preflight: ok | tier: standard | recall: <n found|none> | model: ok | budget: ok | loops: <n> | verify: pass/blocked | guard: on | learned: <n|none> | metrics: written`.
+This turns soft "invoke skill" instructions into a verifiable signal. The `learned:` field comes from
+skill `learning-capture` — a handoff with no `learned:` line means the self-learning step was skipped.
