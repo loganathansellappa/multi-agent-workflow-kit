@@ -23,6 +23,12 @@ outputs:
     perTaskTokenCeiling: 150000
     rollingDailyTokenBudget: 4000000
 
+learning:
+  # Root dir where the learning-capture skill appends lessons-log.jsonl and
+  # episodic_recall reads it back. The agent-preflight-check gate reads kbRoot to
+  # flag a dead/stale self-learning loop (learn: no-log | stale | ok).
+  kbRoot: <KB_ROOT>
+
 models:
   # Declarative per-agent model routing. `scripts/apply_model_routing.py` reads
   # this and writes it into the Copilot CLI store
