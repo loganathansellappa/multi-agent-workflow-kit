@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-08-11
+
+### Added
+- **Always-on session learning loop for plain CLI sessions.** New
+  `instructions/learning-loop.instructions.md` is installed into
+  `~/.copilot/instructions/` (loaded by the CLI in *every* session, any folder) so a
+  top-level session — not just developer/reviewer sub-agents — captures a durable,
+  code-proven lesson when it learns something about product code, build/config,
+  logging/telemetry, or an investigation method. It writes only when the fact
+  generalizes AND has a real `file:line`/command/log anchor, and stays silent
+  otherwise. `install_to_copilot.py` gained `_install_instructions()` +
+  `_read_kb_root()` to substitute `__KB_ROOT__` with the live `kbRoot`; new
+  `TestInstructionsInstall` tests.
+
 ## [1.9.0] - 2026-08-11
 
 ### Added
