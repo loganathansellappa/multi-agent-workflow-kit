@@ -192,5 +192,81 @@ class TestHookConfigWiring(unittest.TestCase):
             self.assertTrue(dest.is_file())  # verbatim copy, install never blocked
 
 
+class TestInstructionsInstall(unittest.TestCase):
+    """_read_kb_root must read kbRoot; _install_instructions must substitute
+    __KB_ROOT__ with the live KB root and copy into ~/.copilot/instructions."""
+
+    def test_read_kb_root(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            cfg = Path(t) / "c.yaml"
+            cfg.write_text("kbRoot: X:\\kb\\prod\n", encoding="utf-8")
+            self.assertEqual(inst._read_kb_root(cfg), "X:\\kb\\prod")
+
+    def test_read_kb_root_absent(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            cfg = Path(t) / "c.yaml"
+            cfg.write_text("other: 1\n", encoding="utf-8")
+            self.assertEqual(inst._read_kb_root(cfg), "")
+
+    def test_install_substitutes_kb_root(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            kit = Path(t) / "kit"
+            (kit / "instructions").mkdir(parents=True)
+            (kit / "instructions" / "learning-loop.instructions.md").write_text(
+                "--kb-root __KB_ROOT__\n", encoding="utf-8")
+            copilot = Path(t) / "copilot"
+            copilot.mkdir()
+            cfg = copilot / inst.CONFIG_FILE
+            cfg.write_text("kbRoot: Y:\\kb\n", encoding="utf-8")
+            inst._install_instructions(kit, copilot, cfg)
+            out = (copilot / "instructions" / "learning-loop.instructions.md").read_text(encoding="utf-8")
+            self.assertIn("Y:\\kb", out)
+            self.assertNotIn("__KB_ROOT__", out)
+
+    def test_install_leaves_token_when_kb_root_missing(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            kit = Path(t) / "kit"
+            (kit / "instructions").mkdir(parents=True)
+            (kit / "instructions" / "learning-loop.instructions.md").write_text(
+                "--kb-root __KB_ROOT__\n", encoding="utf-8")
+            copilot = Path(t) / "copilot"
+            copilot.mkdir()
+            cfg = copilot / inst.CONFIG_FILE  # not created -> kbRoot unknown
+            inst._install_instructions(kit, copilot, cfg)
+            out = (copilot / "instructions" / "learning-loop.instructions.md").read_text(encoding="utf-8")
+            self.assertIn("__KB_ROOT__", out)
+
+    def test_install_noop_when_instructions_dir_absent(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            kit = Path(t) / "kit"
+            kit.mkdir()  # no instructions/ subdir
+            copilot = Path(t) / "copilot"
+            copilot.mkdir()
+            inst._install_instructions(kit, copilot, copilot / inst.CONFIG_FILE)
+            self.assertFalse((copilot / "instructions").exists())
+
+    def test_install_is_idempotent(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            kit = Path(t) / "kit"
+            (kit / "instructions").mkdir(parents=True)
+            (kit / "instructions" / "learning-loop.instructions.md").write_text(
+                "--kb-root __KB_ROOT__\n", encoding="utf-8")
+            copilot = Path(t) / "copilot"
+            copilot.mkdir()
+            cfg = copilot / inst.CONFIG_FILE
+            cfg.write_text("kbRoot: Y:\\kb\n", encoding="utf-8")
+            dest = copilot / "instructions" / "learning-loop.instructions.md"
+            inst._install_instructions(kit, copilot, cfg)
+            first = dest.read_text(encoding="utf-8")
+            inst._install_instructions(kit, copilot, cfg)
+            self.assertEqual(dest.read_text(encoding="utf-8"), first)
+
+
 if __name__ == "__main__":
     unittest.main()

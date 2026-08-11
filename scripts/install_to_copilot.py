@@ -46,6 +46,46 @@ def _write_hook_config(hook_config_src, dest_path, config_path):
     return ""
 
 
+def _read_kb_root(config_path):
+    """Best-effort read of kbRoot from the per-user config; '' if absent.
+    Anchored to a line that starts with 'kbRoot:' so it never matches other keys."""
+    try:
+        import re
+        txt = config_path.read_text(encoding="utf-8")
+        m = re.search(r"(?m)^\s*kbRoot:\s*(.+?)\s*$", txt)
+        if m:
+            return m.group(1).strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return ""
+
+
+def _install_instructions(kit_root, dest_copilot, config_path):
+    """Copy instructions/*.instructions.md into ~/.copilot/instructions, substituting
+    __KB_ROOT__ with the live kbRoot so the always-on learning loop points at the real
+    KB. If kbRoot is unknown the token is left in place and a warning is printed (the
+    instruction still loads; only the concrete path is missing)."""
+    src_dir = kit_root / "instructions"
+    if not src_dir.is_dir():
+        return
+    dest_dir = dest_copilot / "instructions"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    kb_root = _read_kb_root(config_path)
+    count = 0
+    for f in sorted(src_dir.glob("*.instructions.md")):
+        text = f.read_text(encoding="utf-8")
+        if "__KB_ROOT__" in text:
+            if kb_root:
+                text = text.replace("__KB_ROOT__", kb_root)
+            else:
+                print(f"WARNING: kbRoot not found in config; {f.name} installed with "
+                      "__KB_ROOT__ placeholder.", file=sys.stderr)
+        (dest_dir / f.name).write_text(text, encoding="utf-8")
+        count += 1
+    if count:
+        print(f"Installed {count} session instruction file(s) to {dest_dir}")
+
+
 def _rotate_backup(dest_copilot, dest_agents, dest_skills):
     """Snapshot the current live agents+skills before overwriting, keep newest BACKUP_KEEP."""
     backups_root = dest_copilot / ".install-backups"
@@ -122,6 +162,10 @@ def main(argv=None):
     for d in src_skills.iterdir():
         if d.is_dir():
             shutil.copytree(d, dest_skills / d.name, dirs_exist_ok=True)
+
+    # Install always-on session instructions (the learning loop), substituting the
+    # live KB root so a plain CLI session captures lessons without extra wiring.
+    _install_instructions(kit_root, dest_copilot, dest_agents / CONFIG_FILE)
 
     # Optionally install the guard preToolUse hooks (push-guard + shell-guard).
     # Kept opt-in because a hook fires on every shell tool call for the whole
