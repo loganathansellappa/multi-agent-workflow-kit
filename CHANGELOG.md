@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-08-11
+
+### Added
+- **Shell trust-boundary enforcement hook** (`hooks/shell-guard-hook.py`): a `preToolUse` +
+  `subagentStart`/`subagentStop` hook that promotes the reviewer read-only guarantee and the
+  `shell(git:*)` prose to runtime enforcement the model cannot skip. **Layer A** (all agents) denies any
+  shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`) —
+  closing the first step of the "hostile diff → shell → read secrets → exfiltrate" path. **Layer B**
+  (read-only agents: reviewers + read-only orchestrators, tracked via a per-session marker written by
+  `subagentStart` and cleared by `subagentStop`) additionally denies file-mutating shell
+  (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…), while keeping
+  read-only gates (`git diff`/`log`/`show`, `npm run lint`, `eslint`) allowed. Intentionally **not**
+  "git-only" so reviewers' non-git lint tooling keeps working. Fail-open (always exits 0, deny-only via JSON
+  body, `|| exit 0` in the registration) so a mis-correlation degrades to a recoverable false-deny, never a
+  session lock-out. Ships offline unit tests (`tests/test_shell_guard.py`).
+- Registered the shell-guard hook in `hooks.example.json` (`preToolUse` + `subagentStart`/`subagentStop`).
+
+### Changed
+- `install_to_copilot.py --hooks` now ships **both** guard hooks (`push-guard-hook.py` +
+  `shell-guard-hook.py`) and writes the combined registration to `kit-hooks.json` (removing the legacy
+  single-purpose `push-guard.json` to avoid double-registration).
+- `hooks/README.md` documents the shell-guard hook, its two layers, the subagent→session correlation, and
+  the live-verification procedure.
+
 ## [1.4.0] - 2026-08-11
 
 ### Added
