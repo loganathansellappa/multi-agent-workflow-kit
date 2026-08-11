@@ -200,15 +200,34 @@ def push_targets(tokens, repo):
 
     targets = []
     for spec in refspecs:
+        # A leading '+' is the force-push marker and does not change the target.
+        spec = spec.lstrip("+")
         # For `local:remote`, `HEAD:remote`, and `:remote` (delete), the branch
         # that gets written on the remote is the part after the colon.
         remote_side = spec.split(":")[-1] if ":" in spec else spec
+        remote_side = _normalize_branch(remote_side)
         if remote_side.upper() == "HEAD" or remote_side == "":
             cur = git_current_branch(repo)
             targets.append(cur)
         else:
             targets.append(remote_side)
     return targets, False
+
+
+def _normalize_branch(name):
+    """Reduce a refspec's remote side to a bare branch name for comparison.
+
+    Strips a leading force-push '+' and a fully-qualified `refs/heads/` prefix so
+    that `+main`, `refs/heads/main`, and `HEAD:refs/heads/main` are all recognised
+    as the protected branch `main`. Comparison itself is done case-insensitively by
+    the caller."""
+    if not name:
+        return ""
+    name = name.strip().lstrip("+")
+    m = re.match(r"(?i)^refs/heads/(.+)$", name)
+    if m:
+        name = m.group(1)
+    return name
 
 
 def read_configured_base_branch(cfg_text, repo_path):

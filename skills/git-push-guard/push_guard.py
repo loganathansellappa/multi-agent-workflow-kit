@@ -34,6 +34,25 @@ from pathlib import Path
 HARD_PROTECTED = {"main", "master"}
 
 
+def _normalize_branch(name):
+    """Reduce a refspec/branch string to a bare branch name for comparison.
+
+    Strips a leading force-push '+' and a fully-qualified `refs/heads/` prefix so
+    that `+main`, `refs/heads/main`, and `HEAD:refs/heads/main` are all recognised
+    as the protected branch `main`. If a full `local:remote` refspec is passed, the
+    remote side (after the last colon) is what gets written and is used."""
+    if not name:
+        return ""
+    name = name.strip()
+    if ":" in name:
+        name = name.split(":")[-1]
+    name = name.lstrip("+")
+    m = re.match(r"(?i)^refs/heads/(.+)$", name)
+    if m:
+        name = m.group(1)
+    return name.strip()
+
+
 def read_configured_base_branch(cfg_text: str, repo_path: str):
     """Best-effort lookup of the `baseBranch` for the `services.*` entry whose
     `repoPath` matches repo_path (normalized, case-insensitive). Returns None
@@ -104,7 +123,7 @@ def main(argv=None):
         if target is None:
             return 4
 
-    target_lc = target.strip().lower()
+    target_lc = _normalize_branch(target).lower()
 
     # Protected set = the always-on hard names plus this repo's configured
     # baseBranch (if any). Config can only ADD protection, never remove it, so a

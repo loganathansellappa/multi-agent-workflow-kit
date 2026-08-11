@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-08-11
+
+### Fixed
+- **git-push-guard refspec/force-prefix bypass** (`hooks/push-guard-hook.py` +
+  `skills/git-push-guard/push_guard.py`): the guard compared the raw remote-side refspec token to
+  `{main, master, baseBranch}` without normalizing, so `git push origin refs/heads/main`,
+  `git push origin HEAD:refs/heads/main`, and force pushes `git push origin +main` /
+  `+refs/heads/main` all wrote to a protected branch **undetected**. Both files now normalize the
+  target — strip a leading force `+` and a `refs/heads/` prefix — before the protected-set check.
+  Verified: all four bypass variants (and `--force`/`-f`, `git -C . push`, `:main` delete,
+  `--all`/`--mirror`) are now denied, while task/feature branches (incl. `mainline`,
+  `refs/heads/feature/x`) stay allowed. Added `tests/test_push_guard.py` (13 cases) — previously
+  there was **no** push-guard test coverage. Note: indirection via shell substitution
+  (`$(...)`, backticks, `$VAR`) cannot be resolved by a static parser and remains covered only by
+  server-side branch protection.
+
 ## [1.5.0] - 2026-08-11
 
 ### Added
