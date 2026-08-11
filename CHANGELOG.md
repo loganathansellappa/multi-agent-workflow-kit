@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.1] - 2026-08-11
+
+### Added
+- **`OVERVIEW.md` — one-page concept map.** A single-page guide to every orchestrator,
+  developer/reviewer pair, skill and guardrail hook, so new users get the big picture
+  without reading the full README. Linked from the README header. Docs-only; no agent,
+  skill, hook or installer behaviour changed.
+
 ## [1.10.0] - 2026-08-11
 
 ### Added
