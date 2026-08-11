@@ -83,12 +83,15 @@ tests/             unit tests for the tooling
 | `kb-curate` | Periodic KB maintenance: dedup, trim stale, split oversized pages so the KB stays small and cheap to read (with a read-only `kb_lint.py` signal). |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 
-### Hooks (runtime enforcement the model cannot skip)
+### Hooks (policy enforced at the CLI tool boundary)
 
 Skills are *advisory* — an agent chooses to run them. **Hooks** are runtime
-interceptors the Copilot CLI runs on its own at lifecycle points, so they enforce
-policy regardless of what the model decides. Hooks are **session/user-level, not
-per-agent** — see [`hooks/README.md`](hooks/README.md).
+interceptors the Copilot CLI runs on its own at lifecycle points, so they apply
+without the agent's cooperation. They are **defense-in-depth and deliberately
+fail-open** (a crash or an uncovered path allows the call), so pair them with
+server-side branch protection and repo permissions — the model is not the security
+boundary. Hooks are **session/user-level, not per-agent** — see
+[`hooks/README.md`](hooks/README.md).
 
 | Hook | Event | Purpose |
 | --- | --- | --- |

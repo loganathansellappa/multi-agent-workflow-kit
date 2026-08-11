@@ -3,7 +3,8 @@
 Copilot CLI **hooks** are external commands the CLI runs automatically at
 lifecycle points (before/after a tool runs, at session start/end, etc.). Unlike
 skills — which an agent *chooses* to invoke — a hook is a runtime interceptor
-the CLI runs on its own, so it enforces policy the model cannot skip.
+the CLI runs on its own, so it applies policy without the agent's cooperation
+(defense-in-depth, deliberately fail-open — see failure behavior below).
 
 > **Hooks are session/user/repo-level, not per-agent.** You cannot put a hook
 > "inside" an agent `.md`. Agents declare *skills and tools*; hooks intercept
@@ -16,7 +17,7 @@ the CLI runs on its own, so it enforces policy the model cannot skip.
 | File | Purpose |
 | ---- | ------- |
 | `push-guard-hook.py` | `preToolUse` handler that **blocks `git push` to a protected branch** (main/master, plus any configured `baseBranch`) at the tool layer. This is the *enforcement* half of the `git-push-guard` skill. |
-| `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** the model can't skip: (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
+| `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** (fail-open defense-in-depth): (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
 | `hooks.example.json` | The hook registration the CLI reads. Copy it to `~/.copilot/hooks/`. |
 
 ## Why the shell-guard hook exists
@@ -47,9 +48,10 @@ The `git-push-guard` **skill** (`skills/git-push-guard/`) is *advisory*: it only
 protects if the agent remembers to run it before pushing. The **hook** promotes
 that same check to *enforcement* — the CLI runs it before every shell tool call,
 inspects any `git push`, and returns `permissionDecision: deny` for a protected
-branch. The model cannot bypass it. Run the skill and the hook together
-(defense-in-depth) and back both with **server-side branch protection** for a
-hard guarantee.
+branch. This is strong defense-in-depth, not an absolute barrier: the hook is
+deliberately fail-open (a crash, unparseable input, or an uncovered path — e.g. a
+push from inside a script — allows the call). Run the skill and the hook together
+and back both with **server-side branch protection** for the hard guarantee.
 
 ## Install (user-level)
 
@@ -169,5 +171,5 @@ critical path of every tool call. Candidates you *could* add for your own setup:
 * `postToolUse`/`sessionEnd` metrics capture (covered by the
   `delivery-metrics-capture` skill).
 
-Avoid over-hooking: prefer a skill unless you specifically need runtime
-enforcement the model cannot skip.
+Avoid over-hooking: prefer a skill unless you specifically need tool-boundary
+enforcement that applies without the agent's cooperation.

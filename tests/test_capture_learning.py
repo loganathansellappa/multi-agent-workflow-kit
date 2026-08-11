@@ -56,6 +56,23 @@ class TestCaptureLearning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(cap.main(["--kb-root", d, "--list"]), 0)
 
+    def test_new_capture_is_unverified_with_default_confidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            cap.main(["--kb-root", d, "--lesson", "unverified by default",
+                      "--source", "a.cs:1", "--no-verify-source"])
+            e = cap.read_lessons(d)[0]
+            self.assertIs(e.get("validated"), False)
+            self.assertEqual(e.get("confidence"), "medium")
+
+    def test_confidence_and_agent_recorded(self):
+        with tempfile.TemporaryDirectory() as d:
+            cap.main(["--kb-root", d, "--lesson", "high conf lesson",
+                      "--source", "a.cs:1", "--no-verify-source",
+                      "--confidence", "high", "--agent", "backend-developer"])
+            e = cap.read_lessons(d)[0]
+            self.assertEqual(e.get("confidence"), "high")
+            self.assertEqual(e.get("agent"), "backend-developer")
+
 
 class TestRecallLoopClosure(unittest.TestCase):
     def test_recall_reads_captured_lessons(self):
@@ -87,6 +104,35 @@ class TestRecallLoopClosure(unittest.TestCase):
             with redirect_stdout(buf):
                 rec.recall_lessons(d, "anything", [], 5)
             self.assertEqual(buf.getvalue(), "")
+
+    def test_recall_marks_new_capture_unverified(self):
+        import io
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as d:
+            cap.main(["--kb-root", d, "--lesson", "raw inbox lesson",
+                      "--source", "x.cs:1", "--no-verify-source", "--repo", "svc"])
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rec.recall_lessons(d, "svc", [], 5)
+            out = buf.getvalue()
+            self.assertIn("[unverified]", out)
+            self.assertIn("unverified", out)
+
+    def test_recall_no_unverified_mark_when_validated(self):
+        import io
+        import json
+        from contextlib import redirect_stdout
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "lessons-log.jsonl"
+            log.write_text(json.dumps({"date": "2026-01-01", "lesson": "curated fact",
+                                       "source": "x.cs:1", "repo": "svc", "validated": True}) + "\n",
+                           encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rec.recall_lessons(d, "svc", [], 5)
+            out = buf.getvalue()
+            self.assertIn("curated fact", out)
+            self.assertNotIn("[unverified]", out)
 
 
 class TestSourceVerification(unittest.TestCase):

@@ -48,9 +48,14 @@ EXIT CODES
   0 = captured / duplicate-skipped / none / listed
   2 = usage error (no --lesson/--source, or --source cites a non-existent file anchor)
 
-EVIDENCE (100% code-proven only)
---------------------------------
-Capture only OBSERVED facts. When a --source names a code file (known extension,
+EVIDENCE (source-anchored, OBSERVED only — not a proof of correctness)
+----------------------------------------------------------------------
+Capture only OBSERVED facts, never INFERENCES. A resolving --source anchor proves
+the cited source EXISTS — NOT that the conclusion drawn from it is correct; that
+still needs judgment and kb-curate review. Every new capture is recorded
+`validated: false` (advisory) until kb-curate confirms it; episodic_recall marks
+un-curated lessons `[unverified]` so future sessions treat them as hints, not
+authority. When a --source names a code file (known extension,
 optionally with :line) — bare (Foo.cs:12) or path-qualified (src/Foo.cs:12) — the
 file MUST exist or the capture is rejected (exit 2), killing fabricated/stale
 citations. Path-qualified/absolute anchors resolve directly; a bare filename is
@@ -196,6 +201,9 @@ def main(argv=None):
     ap.add_argument("--ticket", default="", help="ticket id")
     ap.add_argument("--tags", default="", help="comma-separated tags")
     ap.add_argument("--session", default="", help="session id")
+    ap.add_argument("--agent", default="", help="agent/author that captured the lesson (provenance)")
+    ap.add_argument("--confidence", default="medium", choices=["low", "medium", "high"],
+                    help="how strongly the OBSERVED evidence supports the lesson's conclusion")
     ap.add_argument("--source-root", default="", help="base dir to resolve relative file:line sources (default: cwd)")
     ap.add_argument("--no-verify-source", action="store_true", help="skip file-existence check for the source anchor")
     ap.add_argument("--none", action="store_true", help="explicitly record that nothing durable came up")
@@ -250,6 +258,9 @@ def main(argv=None):
         "ticket": args.ticket.strip(),
         "tags": [t.strip() for t in args.tags.split(",") if t.strip()],
         "session": args.session.strip(),
+        "agent": args.agent.strip(),
+        "confidence": (args.confidence or "medium").strip(),
+        "validated": False,
     }
     append_entry(args.kb_root, entry)
     layer_note = f" ({entry['layer']})" if entry["layer"] else ""

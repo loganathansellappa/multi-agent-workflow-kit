@@ -81,7 +81,7 @@ promotes/dedups inbox entries into the structured KB pages and keeps the log fro
 - One lesson = one append. Keep it a single, concrete, reusable sentence — not a session summary.
 - Always cite a source; if you can't, it isn't a durable fact yet (mark it INFERRED in the report, don't
   capture it).
-- **100% code-proven only (OBSERVED, never INFERRED).** Capture a lesson only when it is a fact you
+- **Source-anchored, OBSERVED only (never INFERRED).** A resolvable anchor proves the source *exists*, not that your conclusion is correct. Capture a lesson only when it is a fact you
   directly verified against code/output — cite a real `file:line`, commit, or command/log line. Feature
   *understanding* gained during an investigation (e.g. "how a notification flow works", "what an account
   type means") is an ANSWER, not a lesson — record `--none` unless it produced a concrete, code-anchored,

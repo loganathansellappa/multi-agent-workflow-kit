@@ -96,11 +96,15 @@ def recall_lessons(kb_root, repo, files, limit):
     hits = [e for e in lessons if matches(e)][-limit:]
     if not hits:
         return
-    print(f"recall-lessons: {len(hits)} captured lesson(s) may apply")
+    unverified = sum(1 for e in hits if e.get("validated") is not True)
+    note = f" ({unverified} unverified — not yet curated; treat as advisory hints)" if unverified else ""
+    print(f"recall-lessons: {len(hits)} captured lesson(s) may apply{note}")
     for e in hits:
+        mark = "" if e.get("validated") is True else "[unverified] "
         layer = f" | {e['layer']}" if e.get("layer") else ""
+        conf = f" | conf={e['confidence']}" if e.get("confidence") else ""
         src = f" (src: {e['source']})" if e.get("source") else ""
-        print(f"  - {e.get('date','?')}{layer} | {e.get('lesson','').strip()}{src}")
+        print(f"  - {mark}{e.get('date','?')}{layer}{conf} | {e.get('lesson','').strip()}{src}")
 
 
 def connect_ro(db_path):

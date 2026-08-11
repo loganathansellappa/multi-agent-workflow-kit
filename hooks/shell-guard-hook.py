@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""preToolUse + subagent hooks: enforce a shell TRUST BOUNDARY the model can't skip.
+"""preToolUse + subagent hooks: enforce a shell TRUST BOUNDARY at the tool layer (fail-open).
 
 WHY THIS EXISTS
 ---------------
