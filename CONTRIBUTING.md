@@ -25,14 +25,16 @@ starter kit — contributions should keep it that way.
 
 ## Before you open a PR
 
-Run the checks locally — both must be green:
+Run the gate locally — it must be green:
 
 ```bash
-python scripts/validate_agents.py
-python run_tests.py
+python scripts/verify.py     # chains validate_agents + run_tests (one command)
 ```
 
-The CI workflow runs the same two commands.
+`scripts/verify.py` is the distributable gate: it runs the agent lint and the unit +
+capability-contract tests (and a behavior eval if the kit ships one) and fails on the first breakage.
+Run it before opening a PR and before handing the kit to another developer. The CI workflow runs the
+same `verify.py`.
 
 **Agent-review gate (mandatory).** These two checks do not review instruction quality. For any changed
 `*.agent.md` or `skills/**/SKILL.md`, also run a review pass on the changes (a dedicated agent-instruction

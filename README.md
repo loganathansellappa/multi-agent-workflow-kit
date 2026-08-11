@@ -244,8 +244,7 @@ The generated block looks like this (you never hand-edit it):
 3. **Validate everything is wired correctly**
 
    ```bash
-   python scripts/validate_agents.py
-   python run_tests.py
+   python scripts/verify.py     # lint + tests + capability contract (one command)
    ```
 
 4. **Install the agents/skills into your Copilot CLI** (copies to `~/.copilot/`)
@@ -346,7 +345,8 @@ Run `copilot --help` for the full flag list.
 | `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. `--hooks` also installs the push-guard `preToolUse` hook into `~/.copilot/hooks/`. |
 | `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. Delete-on-drift, so a real run snapshots `agents/`+`skills/` to `.sync-backups/<timestamp>/` (keeps newest 2); use `--what-if` to preview. |
 | `scripts/metrics_rollup.py` | Summarizes the metrics log into a per-day/agent rollup. |
-| `run_tests.py` | Runs the unit-test suite for the tooling. |
+| `scripts/verify.py` | One-command gate: chains the agent lint, the unit + capability-contract tests, and a behavior eval (if present), failing on the first breakage. Run before committing and before distributing the kit. `--strict` also fails on eval PENDING cases. |
+| `run_tests.py` | Runs the unit-test suite for the tooling (incl. the capability-contract test). |
 
 ---
 
