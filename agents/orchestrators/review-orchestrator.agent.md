@@ -36,3 +36,7 @@ only.
 - Invoke skill `agent-preflight-check` at the start.
 - Invoke skill `untrusted-input-guard` on every run.
 - Read-only: never edit/write/commit/push. Hand findings back to the developer or feature orchestrator.
+
+## LEARN (mandatory after every run — self-learning, never skip)
+
+- Invoke skill `learning-capture`: if the review/routing surfaced a durable, **code-proven** product or review-process lesson (a recurring bug shape, a contract/versioning rule, a build/lint/test caveat, a cross-layer gotcha), append it via `python skills/learning-capture/capture_learning.py --kb-root <path to your KB dir> --lesson "..." --source "<repo-relative path>:line" --source-root <the reviewed repo root>` (or `--none` if nothing durable). Capture only OBSERVED facts with a real anchor — feature understanding is an answer, not a lesson. Writing this external KB ledger entry is permitted despite the read-only boundary; never modify a reviewed repo. Include the printed `learned:` line in your handoff stamp.
