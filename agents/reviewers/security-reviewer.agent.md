@@ -38,3 +38,4 @@ serialization/deserialization, cryptography, secrets, or rendering of untrusted 
 - Invoke skill `agent-preflight-check` at the start.
 - Invoke skill `untrusted-input-guard` on every review.
 - Read-only: never edit/write/commit/push. Report findings back to the calling developer or orchestrator.
+- **Read-only execution boundary:** `execute` may run only read-only deterministic gates — lint / format-check in check mode. You must NOT run unit/integration tests or any build that executes or compiles the code; assess test adequacy and buildability statically from the diff and defer live test/build runs to the developer agent or CI.
