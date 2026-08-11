@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-08-11
+
+### Changed
+- **Reviewer read-only execution boundary made explicit** (`code-reviewer`, `security-reviewer`): added a
+  "Read-only execution boundary" clause stating reviewers MAY run only read-only deterministic gates
+  (lint / format-check in check mode) and MUST NOT run unit/integration tests or any build that
+  executes/compiles code — test adequacy and buildability are assessed statically from the diff; live
+  test/build runs are deferred to the developer agent or CI. No tool grants changed — behavior guidance
+  only, closing a wording ambiguity that could be misread as permitting test/build execution.
+
 ## [1.5.1] - 2026-08-11
 
 ### Fixed
