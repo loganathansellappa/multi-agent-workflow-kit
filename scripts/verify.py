@@ -46,6 +46,8 @@ def main():
     stages = [
         ("Agent lint (validate_agents.py)", ["scripts/validate_agents.py"]),
         ("Unit + contract tests (run_tests.py)", ["run_tests.py"]),
+        ("Portable capability check (capability_check.py)",
+         ["scripts/capability_check.py", "--agents-dir", "agents", "--skills-dir", "skills"]),
     ]
     # The behavior eval is optional — only present in kits that ship eval/.
     if (KIT_ROOT / "eval" / "run_eval.py").exists():

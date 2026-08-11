@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-08-11
+
+### Added
+- **Portable capability check that travels with the pack** (`scripts/capability_check.py`): a
+  self-contained, layout-agnostic drift check that classifies each agent's role by NAME, so it runs
+  against both the kit's `agents/<role>/` tree and the flattened `~/.copilot/agents/` install recipients
+  receive and hand-edit. Asserts reviewers hold no mutation/delegation tools, developers keep
+  `edit`/`task`, and the quality-loop-harness still declares a numeric loop cap. Added as a `verify.py`
+  stage.
+- **Rotating live backups + post-install verification** in `install_to_copilot.py`: snapshots the current
+  live agents+skills into `~/.copilot/.install-backups/<timestamp>/` (keeping the **newest 3**) before
+  overwriting, then ships `capability_check.py` into `~/.copilot/scripts/` and runs it against the freshly
+  installed agents. `--no-backup` / `--no-verify` opt out. Drift insurance now travels with the
+  distributed pack, with easy rollback.
+
 ## [1.3.0] - 2026-08-11
 
 ### Added

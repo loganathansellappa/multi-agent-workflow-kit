@@ -255,6 +255,15 @@ The generated block looks like this (you never hand-edit it):
    python scripts/install_to_copilot.py --hooks
    ```
 
+   Before overwriting, the installer snapshots your current live agents+skills into
+   `~/.copilot/.install-backups/<timestamp>/` (keeping the **newest 3**) for easy rollback, then ships a
+   portable `capability_check.py` into `~/.copilot/scripts/` and runs it against the freshly installed
+   agents. That check classifies role by name (so it works on the flattened live layout), asserts
+   reviewers hold no mutation/delegation tools, developers keep `edit`/`task`, and the loop cap is present
+   — so drift insurance travels with the pack and a later hand-edit that weakens a gate is caught on your
+   machine. Re-run any time: `python ~/.copilot/scripts/capability_check.py`. Use `--no-backup` /
+   `--no-verify` to opt out.
+
 5. **Route models**
 
    ```bash
@@ -342,7 +351,8 @@ Run `copilot --help` for the full flag list.
 | --- | --- |
 | `scripts/validate_agents.py` | Lints the agent kit (frontmatter, hardening block, gate wording, skill refs, reviewer least-privilege) **and runs a repo-wide "keep it generic" scrub scan** (personal paths, internal ticket ids, private hosts, and — via an optional gitignored `scripts/company-terms.txt` — company/product names) so nothing organisation-specific ever ships. |
 | `scripts/apply_model_routing.py` | Writes per-agent model bindings from config into the Copilot CLI store. Backs up `settings.json` → `settings.json.bak` before overwriting; `--dry-run` previews. |
-| `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. `--hooks` also installs the push-guard `preToolUse` hook into `~/.copilot/hooks/`. |
+| `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. Snapshots the current live agents+skills to `~/.copilot/.install-backups/` (newest 3) before overwriting, then ships `capability_check.py` into `~/.copilot/scripts/` and runs it post-install. `--hooks` also installs the push-guard `preToolUse` hook; `--no-backup`/`--no-verify` opt out. |
+| `scripts/capability_check.py` | Portable, layout-agnostic drift check (role by name) that runs against the flattened `~/.copilot/agents/` install: reviewers hold no mutation/delegation tools, developers keep `edit`/`task`, loop cap present. Travels with the pack. |
 | `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. Delete-on-drift, so a real run snapshots `agents/`+`skills/` to `.sync-backups/<timestamp>/` (keeps newest 2); use `--what-if` to preview. |
 | `scripts/metrics_rollup.py` | Summarizes the metrics log into a per-day/agent rollup. |
 | `scripts/verify.py` | One-command gate: chains the agent lint, the unit + capability-contract tests, and a behavior eval (if present), failing on the first breakage. Run before committing and before distributing the kit. `--strict` also fails on eval PENDING cases. |
