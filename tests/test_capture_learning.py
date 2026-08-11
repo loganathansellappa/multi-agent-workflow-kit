@@ -21,7 +21,7 @@ class TestCaptureLearning(unittest.TestCase):
     def test_capture_appends_entry(self):
         with tempfile.TemporaryDirectory() as d:
             rc = cap.main(["--kb-root", d, "--lesson", "a read-only field maps to an immutable property",
-                           "--source", "user.yaml:12", "--layer", "contracts"])
+                           "--source", "user.yaml:12", "--no-verify-source", "--layer", "contracts"])
             self.assertEqual(rc, 0)
             entries = cap.read_lessons(d)
             self.assertEqual(len(entries), 1)
@@ -42,8 +42,8 @@ class TestCaptureLearning(unittest.TestCase):
 
     def test_deduplicates(self):
         with tempfile.TemporaryDirectory() as d:
-            cap.main(["--kb-root", d, "--lesson", "same lesson", "--source", "a.py:1"])
-            cap.main(["--kb-root", d, "--lesson", "SAME   lesson", "--source", "a.py:9"])
+            cap.main(["--kb-root", d, "--lesson", "same lesson", "--source", "a.py:1", "--no-verify-source"])
+            cap.main(["--kb-root", d, "--lesson", "SAME   lesson", "--source", "a.py:9", "--no-verify-source"])
             self.assertEqual(len(cap.read_lessons(d)), 1)
 
     def test_none_records_nothing_but_succeeds(self):
@@ -61,7 +61,7 @@ class TestRecallLoopClosure(unittest.TestCase):
     def test_recall_reads_captured_lessons(self):
         with tempfile.TemporaryDirectory() as d:
             cap.main(["--kb-root", d, "--lesson", "poll timeout lives in receiver.yaml",
-                      "--source", "config/receiver.yaml:12", "--layer", "backend",
+                      "--source", "config/receiver.yaml:12", "--no-verify-source", "--layer", "backend",
                       "--repo", "serviceA", "--tags", "retry,config"])
             lessons = rec.read_captured_lessons(d)
             self.assertEqual(len(lessons), 1)
@@ -71,7 +71,7 @@ class TestRecallLoopClosure(unittest.TestCase):
         from contextlib import redirect_stdout
         with tempfile.TemporaryDirectory() as d:
             cap.main(["--kb-root", d, "--lesson", "shared retry budget bug",
-                      "--source", "receiver.py:98", "--repo", "serviceA"])
+                      "--source", "receiver.py:98", "--no-verify-source", "--repo", "serviceA"])
             buf = io.StringIO()
             with redirect_stdout(buf):
                 rec.recall_lessons(d, "serviceA", [], 5)
@@ -87,6 +87,69 @@ class TestRecallLoopClosure(unittest.TestCase):
             with redirect_stdout(buf):
                 rec.recall_lessons(d, "anything", [], 5)
             self.assertEqual(buf.getvalue(), "")
+
+
+class TestSourceVerification(unittest.TestCase):
+    def test_dangling_path_anchor_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc = cap.main(["--kb-root", d, "--lesson", "x", "--source", "src/nope/Missing.cs:5"])
+            self.assertEqual(rc, 2)
+            self.assertEqual(cap.read_lessons(d), [])
+
+    def test_real_path_anchor_accepted(self):
+        with tempfile.TemporaryDirectory() as d:
+            sub = Path(d) / "sub"
+            sub.mkdir()
+            (sub / "real.py").write_text("x = 1\n", encoding="utf-8")
+            rc = cap.main(["--kb-root", d, "--lesson", "real anchor",
+                           "--source", "sub/real.py:1", "--source-root", d])
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(cap.read_lessons(d)), 1)
+
+    def test_multi_anchor_all_must_resolve(self):
+        with tempfile.TemporaryDirectory() as d:
+            sub = Path(d) / "sub"
+            sub.mkdir()
+            (sub / "real.py").write_text("x = 1\n", encoding="utf-8")
+            rc = cap.main(["--kb-root", d, "--lesson", "one real one fake",
+                           "--source", "sub/real.py:1 and sub/fake.py:2", "--source-root", d])
+            self.assertEqual(rc, 2)
+            self.assertEqual(cap.read_lessons(d), [])
+
+    def test_bare_filename_rejected_when_absent(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as root:
+            rc = cap.main(["--kb-root", d, "--lesson", "bare absent",
+                           "--source", "NoSuchFileXYZ.cs:9", "--source-root", root])
+            self.assertEqual(rc, 2)
+            self.assertEqual(cap.read_lessons(d), [])
+
+    def test_bare_filename_found_by_search(self):
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as root:
+            deep = Path(root) / "a" / "b"
+            deep.mkdir(parents=True)
+            (deep / "Found.cs").write_text("// x\n", encoding="utf-8")
+            rc = cap.main(["--kb-root", d, "--lesson", "bare found nested",
+                           "--source", "Found.cs:3", "--source-root", root])
+            self.assertEqual(rc, 0)
+            self.assertEqual(len(cap.read_lessons(d)), 1)
+
+    def test_command_source_allowed(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc = cap.main(["--kb-root", d, "--lesson", "cmd ok", "--source", "yarn run build failed"])
+            self.assertEqual(rc, 0)
+
+    def test_no_verify_source_bypass(self):
+        with tempfile.TemporaryDirectory() as d:
+            rc = cap.main(["--kb-root", d, "--lesson", "external anchor",
+                           "--source", "src/nope/Missing.cs:5", "--no-verify-source"])
+            self.assertEqual(rc, 0)
+
+    def test_verify_source_unit(self):
+        ok, bad = cap.verify_source("src/nope/Missing.cs:5")
+        self.assertFalse(ok)
+        self.assertEqual(bad, "src/nope/Missing.cs")
+        ok2, _ = cap.verify_source("just a log line, no path")
+        self.assertTrue(ok2)
 
 
 if __name__ == "__main__":

@@ -46,18 +46,107 @@ Prints a stamp line for the handoff, e.g.
 EXIT CODES
 ----------
   0 = captured / duplicate-skipped / none / listed
-  2 = usage error (capture requested without --lesson or without --source)
+  2 = usage error (no --lesson/--source, or --source cites a non-existent file anchor)
+
+EVIDENCE (100% code-proven only)
+--------------------------------
+Capture only OBSERVED facts. When a --source names a code file (known extension,
+optionally with :line) — bare (Foo.cs:12) or path-qualified (src/Foo.cs:12) — the
+file MUST exist or the capture is rejected (exit 2), killing fabricated/stale
+citations. Path-qualified/absolute anchors resolve directly; a bare filename is
+found via a bounded, pruned search under --source-root then cwd. Sources with no
+file anchor (commands, log lines, URLs) are not file-verifiable and are allowed.
+Reviewers (which never cd into the reviewed repo) should pass --source-root <repo
+root>. Use --no-verify-source only for an intentionally external anchor.
 
 Stdlib only; cross-platform; no network. Appends only (never rewrites history).
 """
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import date
 from pathlib import Path
 
 LOG_NAME = "lessons-log.jsonl"
+
+CODE_EXTS = (
+    ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".cs", ".ts", ".tsx", ".js",
+    ".jsx", ".py", ".go", ".java", ".rb", ".rs", ".kt", ".scala", ".swift",
+    ".yaml", ".yml", ".json", ".md", ".sql", ".xml", ".gradle", ".groovy",
+    ".sh", ".ps1", ".proto", ".toml", ".ini", ".cfg", ".config",
+)
+
+_TOKEN_RE = re.compile(r"[^\s,;()]+")
+_LINE_SUFFIX_RE = re.compile(r"^(.*?)(?::\d+(?::\d+)?)?$")
+_PRUNE_DIRS = {
+    ".git", ".hg", ".svn", "node_modules", "build", "out", "bin", "obj",
+    "dist", "target", "packages", ".vs", ".vscode", ".idea", "__pycache__",
+}
+_WALK_FILE_CAP = 60000
+
+
+def _file_anchors(source):
+    """Tokens that name a code file (known extension, optional :line[:col]),
+    whether bare (Foo.cs:12) or path-qualified (src/Foo.cs:12)."""
+    out = []
+    for tok in _TOKEN_RE.findall(source or ""):
+        m = _LINE_SUFFIX_RE.match(tok)
+        path = m.group(1) if m else tok
+        if path.lower().endswith(CODE_EXTS):
+            out.append(path)
+    return out
+
+
+def _find_by_name(root, name, cap=_WALK_FILE_CAP):
+    """Bounded, pruned recursive search for a file basename under root. Returns
+    True on first match; gives up after visiting ~cap files (so a fabricated
+    citation cannot walk a huge repo forever)."""
+    try:
+        if not Path(root).is_dir():
+            return False
+    except OSError:
+        return False
+    seen = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _PRUNE_DIRS]
+        if name in filenames:
+            return True
+        seen += len(filenames)
+        if seen > cap:
+            return False
+    return False
+
+
+def verify_source(source, source_root=None):
+    """(ok, bad_path). ok=False when the source names any code file (by known
+    extension) that does NOT resolve to an existing file — EVERY named code file
+    must exist (100% proof: one fabricated anchor riding along a real one is still
+    a guess). Sources with no file anchor (commands, log lines, URLs) are not
+    file-verifiable => ok. Per anchor: absolute path; join under --source-root /
+    cwd; and for a bare filename a bounded, pruned search under --source-root then
+    cwd (so bare citations — the common style — are actually verified, not silently
+    trusted)."""
+    anchors = _file_anchors(source)
+    if not anchors:
+        return True, None
+    roots = [Path.cwd()]
+    if source_root:
+        roots.insert(0, Path(source_root))
+    for path in anchors:
+        p = Path(path)
+        if p.is_absolute():
+            if not p.exists():
+                return False, path
+            continue
+        if any((r / p).exists() for r in roots):
+            continue
+        is_bare = ("/" not in path) and ("\\" not in path)
+        if is_bare and any(_find_by_name(r, p.name) for r in roots):
+            continue
+        return False, path
+    return True, None
 
 
 def log_path(kb_root):
@@ -107,6 +196,8 @@ def main(argv=None):
     ap.add_argument("--ticket", default="", help="ticket id")
     ap.add_argument("--tags", default="", help="comma-separated tags")
     ap.add_argument("--session", default="", help="session id")
+    ap.add_argument("--source-root", default="", help="base dir to resolve relative file:line sources (default: cwd)")
+    ap.add_argument("--no-verify-source", action="store_true", help="skip file-existence check for the source anchor")
     ap.add_argument("--none", action="store_true", help="explicitly record that nothing durable came up")
     ap.add_argument("--list", action="store_true", help="list recent captured lessons and exit")
     ap.add_argument("--limit", type=int, default=10)
@@ -135,6 +226,15 @@ def main(argv=None):
         print("ERROR: --source is required (a lesson with no checkable source is a guess). "
               "Give file:line / command / log line.", file=sys.stderr)
         return 2
+
+    if not args.no_verify_source:
+        ok, bad = verify_source(args.source, args.source_root or None)
+        if not ok:
+            print(f"ERROR: --source cites a file that does not exist: '{bad}'. "
+                  "Capture only OBSERVED, code-anchored facts — fix the path, cite a real "
+                  "file:line/command/log line, or pass --no-verify-source for an "
+                  "intentionally external anchor.", file=sys.stderr)
+            return 2
 
     entries = read_lessons(args.kb_root)
     if is_duplicate(entries, args.lesson):

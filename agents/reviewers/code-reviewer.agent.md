@@ -37,3 +37,7 @@ check mode); never mutate the repository.
 - Invoke skill `untrusted-input-guard` on every review.
 - Read-only: never edit/write/commit/push. Report findings back to the calling developer or orchestrator.
 - **Read-only execution boundary:** `execute` may run only read-only deterministic gates — lint / format-check in check mode. You must NOT run unit/integration tests or any build that executes or compiles the code; assess test adequacy and buildability statically from the diff and defer live test/build runs to the developer agent or CI.
+
+## LEARN (mandatory after every review — self-learning, never skip)
+
+- Invoke skill `learning-capture`: if the review/investigation surfaced a durable, **code-proven** product lesson (a recurring bug shape, a contract/versioning rule, a build/lint/test caveat, a cross-layer gotcha), append it via `python skills/learning-capture/capture_learning.py --kb-root <path to your KB dir> --lesson "..." --source "<repo-relative path>:line" --source-root <the reviewed repo root>` (or `--none` if nothing durable). Capture only OBSERVED facts with a real anchor — feature understanding is an answer, not a lesson. Writing this external KB ledger entry is permitted despite the read-only review boundary; never modify the reviewed repo. Include the printed `learned:` line in your handoff stamp.

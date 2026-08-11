@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-08-11
+
+### Added
+- **Auto-capture of learning on review sessions.** The reviewers (`code-reviewer`, `security-reviewer`) and
+  `review-orchestrator` now carry a mandatory LEARN step invoking `learning-capture` — previously only
+  developer agents + `feature-orchestrator` did, so review/investigation sessions captured nothing.
+  Reviewers stay read-only toward the reviewed repo; the KB ledger is an external append.
+- **KB scope rule** in `skills/learning-capture/SKILL.md`: the project `kbRoot` captures only product
+  lessons; agent-kit self-refinement (agents/skills/hooks/scripts) is out of scope and belongs in a separate
+  kit ledger.
+- **Evidence hardening — code-proven only.** `capture_learning.py` now validates every `--source` file
+  anchor (bare `File.ext:line` OR path-qualified, by known code extension): each named code file must resolve
+  to an existing file (absolute, under `--source-root`/cwd, or via a bounded pruned search for bare names) or
+  the capture is rejected (exit 2), killing fabricated/stale citations — including a fabricated anchor paired
+  with a real one (all anchors must resolve). Commands, log lines and URLs (no file anchor) remain allowed.
+  New `--source-root` (resolve relative anchors for no-cd agents) and `--no-verify-source` flags. SKILL.md
+  adds an OBSERVED-only guardrail (feature *understanding* is an answer, not a lesson → `--none`). New
+  `TestSourceVerification` tests.
+
 ## [1.8.0] - 2026-08-11
 
 ### Added
