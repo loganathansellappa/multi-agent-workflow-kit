@@ -9,6 +9,8 @@ your own stack in minutes — with cost governance and a quality loop built in.
 
 > Everything here is generic. Replace the placeholders (`serviceA`, `<REPO_ROOT>`, build commands, etc.)
 > with your own project's details.
+>
+> **Want the big picture first?** [OVERVIEW.md](OVERVIEW.md) is a one-page map of every agent, skill and guard.
 
 > **This is a scaffold, not a drop-in.** The agents, knowledge base, and service map are deliberately
 > generic templates. Before it does useful work you must invest time customizing them to your stack:
