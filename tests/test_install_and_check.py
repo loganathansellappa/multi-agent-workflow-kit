@@ -136,5 +136,61 @@ class TestBackupRotation(unittest.TestCase):
             self.assertFalse((copilot / ".install-backups").exists())
 
 
+class TestHookConfigWiring(unittest.TestCase):
+    """_write_hook_config must wire PUSH_GUARD_CONFIG to the live per-repo config
+    when it exists, and leave it blank (never crash) when it doesn't — so the guard
+    protects each repo's configured baseBranch, not just the hard-coded main/master."""
+
+    HOOK_JSON = (
+        '{"version":1,"hooks":{"preToolUse":['
+        '{"matcher":"bash","type":"command","bash":"x","env":{"PUSH_GUARD_CONFIG":""}},'
+        '{"matcher":"bash","type":"command","bash":"y"}'
+        ']}}'
+    )
+
+    def _src(self, tmp):
+        src = tmp / "hooks.example.json"
+        src.write_text(self.HOOK_JSON, encoding="utf-8")
+        return src
+
+    def test_wires_config_path_when_present(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            src = self._src(tmp)
+            cfg = tmp / inst.CONFIG_FILE
+            cfg.write_text("services: {}\n", encoding="utf-8")
+            dest = tmp / "kit-hooks.json"
+            resolved = inst._write_hook_config(src, dest, cfg)
+            self.assertEqual(resolved, str(cfg))
+            data = json.loads(dest.read_text(encoding="utf-8"))
+            env = data["hooks"]["preToolUse"][0]["env"]
+            self.assertEqual(env["PUSH_GUARD_CONFIG"], str(cfg))
+            # An entry without an env block is left untouched.
+            self.assertNotIn("env", data["hooks"]["preToolUse"][1])
+
+    def test_blank_when_config_absent(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            src = self._src(tmp)
+            dest = tmp / "kit-hooks.json"
+            resolved = inst._write_hook_config(src, dest, tmp / "does-not-exist.yaml")
+            self.assertEqual(resolved, "")
+            data = json.loads(dest.read_text(encoding="utf-8"))
+            self.assertEqual(data["hooks"]["preToolUse"][0]["env"]["PUSH_GUARD_CONFIG"], "")
+
+    def test_malformed_source_falls_back_to_copy(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            src = tmp / "hooks.example.json"
+            src.write_text("{not valid json", encoding="utf-8")
+            dest = tmp / "kit-hooks.json"
+            resolved = inst._write_hook_config(src, dest, tmp / "cfg.yaml")
+            self.assertEqual(resolved, "")
+            self.assertTrue(dest.is_file())  # verbatim copy, install never blocked
+
+
 if __name__ == "__main__":
     unittest.main()
