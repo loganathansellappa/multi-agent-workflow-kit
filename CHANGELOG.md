@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-08-11
+
+### Added
+- **Bounded review/fix loop in `quality-loop-harness`.** Explicit cap of 3 review/fix cycles plus a
+  no-progress / oscillation breaker and per-cycle wall-clock guidance; on trip the agent hands off
+  **BLOCKED** instead of looping indefinitely (guards against runaway loops / unbounded cost).
+- **MCP secrets-via-environment guidance in SECURITY.md.** Reference integration tokens with `${VAR}`
+  expansion instead of inline values, scope `TOOLSETS`/permissions, and keep a `~/.copilot/.gitignore`
+  backstop.
+
 ## [1.1.1] - 2026-08-10
 
 ### Added
