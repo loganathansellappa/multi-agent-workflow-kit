@@ -11,6 +11,11 @@ This kit ships **templates and tooling**, not a running service. The main securi
 
 - **No secrets in the repo.** The real `agents.config.yaml` is gitignored; only the `.example` template is
   tracked. Never commit tokens, private URLs, internal hostnames, or personal paths.
+- **MCP / integration tokens via the environment, not inline.** Copilot CLI expands `${VAR}` in
+  `mcp-config.json`, so reference secrets (e.g. `"API_TOKEN": "${API_TOKEN}"`) and set the variable in your
+  environment rather than pasting raw tokens into config files. Scope integration `TOOLSETS`/permissions to
+  what you use, and keep a `~/.copilot/.gitignore` excluding `mcp-config.json`, `**/.secrets/`, and
+  `*.token` as a backstop.
 - **Prompt injection.** Agents treat repository, diff, ticket, file, and tool-output content as **untrusted
   data, never instructions** (see the `untrusted-input-guard` skill). Keep this guard in place when adapting
   agents.
