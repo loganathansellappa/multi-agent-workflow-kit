@@ -2,15 +2,45 @@
 """Install kit agents and skills into ~/.copilot (kit -> live). Cross-platform.
 
 Flattens all *.agent.md files into ~/.copilot/agents for reliable discovery, copies
-supporting root files, and mirrors skills. Replaces the earlier install-to-copilot.ps1
-(Windows) and install-to-copilot.sh (Unix) with one stdlib-only Python entry point.
+supporting root files, and mirrors skills. Before overwriting, it snapshots the current
+live agents+skills into ~/.copilot/.install-backups/<timestamp>/ (keeping the newest 3)
+so a bad install or a later hand-edit can be rolled back. After installing it ships the
+portable capability check into ~/.copilot/scripts/ and runs it against the freshly
+installed agents, so the drift insurance travels with the pack and privilege drift is
+caught on the recipient's machine. Replaces the earlier install-to-copilot.ps1 / .sh.
 """
 import argparse
 import shutil
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SUPPORT_FILES = ("agents.config.yaml",)
+BACKUP_KEEP = 3  # rotating backups of live agents+skills kept before each overwrite
+
+
+def _rotate_backup(dest_copilot, dest_agents, dest_skills):
+    """Snapshot the current live agents+skills before overwriting, keep newest BACKUP_KEEP."""
+    backups_root = dest_copilot / ".install-backups"
+    have_agents = dest_agents.is_dir() and any(dest_agents.iterdir())
+    have_skills = dest_skills.is_dir() and any(dest_skills.iterdir())
+    if not (have_agents or have_skills):
+        return None  # nothing live to back up yet (first install)
+    backups_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    snap = backups_root / stamp
+    snap.mkdir(parents=True, exist_ok=True)
+    if have_agents:
+        shutil.copytree(dest_agents, snap / "agents", dirs_exist_ok=True)
+    if have_skills:
+        shutil.copytree(dest_skills, snap / "skills", dirs_exist_ok=True)
+    # Prune to the newest BACKUP_KEEP snapshots.
+    snaps = sorted([d for d in backups_root.iterdir() if d.is_dir()])
+    for old in snaps[:-BACKUP_KEEP]:
+        shutil.rmtree(old, ignore_errors=True)
+    print(f"Backed up live agents+skills to {snap} (keeping newest {BACKUP_KEEP}).")
+    return snap
 
 
 def main(argv=None):
@@ -24,6 +54,10 @@ def main(argv=None):
         help="Also install the push-guard preToolUse hook into ~/.copilot/hooks "
              "(push-guard-hook.py + push-guard.json). See hooks/README.md.",
     )
+    ap.add_argument("--no-backup", action="store_true",
+                    help="Skip the rotating backup of the current live agents+skills.")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="Skip the post-install capability-contract check against the live install.")
     args = ap.parse_args(argv)
 
     kit_root = Path(args.kit_root)
@@ -33,6 +67,12 @@ def main(argv=None):
     dest_copilot = Path.home() / ".copilot"
     dest_agents = dest_copilot / "agents"
     dest_skills = dest_copilot / "skills"
+
+    # Back up the current live agents+skills BEFORE overwriting, so a bad install
+    # (or a later hand-edit that fails the check) can be rolled back easily.
+    if not args.no_backup:
+        _rotate_backup(dest_copilot, dest_agents, dest_skills)
+
     dest_agents.mkdir(parents=True, exist_ok=True)
     dest_skills.mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +115,26 @@ def main(argv=None):
             print("WARNING: hooks/ files not found; skipped hook install.", file=sys.stderr)
 
     print(f"Installed agents and skills to {dest_copilot}")
+
+    # Ship the portable capability-contract check INTO the live install so the drift
+    # insurance travels with the pack, then run it against what we just installed.
+    check_src = kit_root / "scripts" / "capability_check.py"
+    if check_src.is_file():
+        dest_scripts = dest_copilot / "scripts"
+        dest_scripts.mkdir(parents=True, exist_ok=True)
+        dest_check = dest_scripts / "capability_check.py"
+        shutil.copy2(check_src, dest_check)
+        print(f"Installed capability check to {dest_check}")
+        if not args.no_verify:
+            rc = subprocess.run(
+                [sys.executable, str(dest_check),
+                 "--agents-dir", str(dest_agents), "--skills-dir", str(dest_skills)]
+            ).returncode
+            if rc != 0:
+                print("WARNING: post-install capability check FAILED against the live install. "
+                      "Roll back from ~/.copilot/.install-backups/<latest> if needed.",
+                      file=sys.stderr)
+                return rc
     return 0
 
 
