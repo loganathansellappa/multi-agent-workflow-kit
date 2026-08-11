@@ -15,11 +15,8 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Agents kit lint
-        run: python scripts/validate_agents.py
-
-      - name: Python tests
-        run: python run_tests.py
+      - name: Verify gate (lint + tests + capability contract)
+        run: python scripts/verify.py
 
       - name: Secret / leak scan
         shell: bash

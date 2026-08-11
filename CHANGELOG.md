@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-08-11
+
+### Added
+- **Capability-contract test** (`tests/test_capability_contract.py`): locks each agent's
+  runtime-enforced `tools:` grant. A frozen per-agent snapshot fails CI on ANY drift (added/removed
+  tool, or a new agent not opted into the contract), and independent role invariants forbid reviewers
+  and orchestrators from holding mutation/delegation tools and require developers to keep `edit`/`task`.
+  A hand-edit that widens an agent's privilege now fails the gate instead of shipping silently.
+- **One-command verify gate** (`scripts/verify.py`): chains agent lint → unit + capability-contract
+  tests → behavior eval (if the kit ships one) and fails on the first breakage. Makes the harness
+  distributable — anyone who receives the kit can prove it sound with one command, not just CI.
+
+### Changed
+- CI (`.github/workflows/validate.yml`) now runs the single `scripts/verify.py` gate in place of
+  separate lint/test steps, so agent-file changes are gated on the full harness.
+- `CONTRIBUTING.md` / `README.md`: document `verify.py` as the pre-commit / pre-distribution gate and
+  the capability contract.
+
 ## [1.2.0] - 2026-08-11
 
 ### Added
