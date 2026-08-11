@@ -22,6 +22,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+LEARN_STALE_DAYS = 7  # a self-learning loop with no capture in this many days looks skipped
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Advisory cost-governance gate.")
@@ -135,9 +137,47 @@ def main(argv=None):
         budget = "near(rolling)"
         advise(f"budget: today+estimate ({today_tokens + est}) approaches daily budget {rolling_budget}.")
 
+    # --- 3. Learning-ledger hint (advisory only): is the self-learning loop alive? ---
+    # Flags when learning-capture has never run (no log) or has gone stale, so a
+    # skipped LEARN step is impossible to miss at the next task start (same
+    # retrospective-visibility model as the budget check above).
+    learn = "ok"
+    # NOTE: assumes exactly one `kbRoot:` key in the config file (internal: e2e.kbRoot;
+    # public: learning.kbRoot). This reader is intentionally not section-scoped to stay
+    # consistent with read_val's style; do not add a second kbRoot: under another section.
+    kb_root = read_val(r"(?m)^\s*kbRoot:\s*(.+?)\s*$")
+    if not kb_root:
+        learn = "unconfigured"
+    else:
+        lessons_log = Path(kb_root) / "lessons-log.jsonl"
+        if not lessons_log.is_file():
+            learn = "no-log"
+            advise("learn: no lessons-log.jsonl under kbRoot - the learning-capture step has "
+                   "never run. Run skill learning-capture at every handoff (a real --lesson or "
+                   "--none); otherwise lessons evaporate.")
+        else:
+            latest = None
+            for line in lessons_log.read_text(encoding="utf-8", errors="ignore").splitlines():
+                dm = re.search(r'"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"', line)
+                if dm and (latest is None or dm.group(1) > latest):
+                    latest = dm.group(1)
+            if latest is None:
+                learn = "empty"
+                advise("learn: lessons-log.jsonl exists but has no dated entries - capture is not "
+                       "writing lessons. Check skill learning-capture.")
+            else:
+                try:
+                    age = (date.today() - date.fromisoformat(latest)).days
+                except ValueError:
+                    age = 0
+                if age > LEARN_STALE_DAYS:
+                    learn = f"stale({age}d)"
+                    advise(f"learn: last captured lesson was {age} days ago (>{LEARN_STALE_DAYS}d) - "
+                           f"the self-learning loop looks skipped. Run learning-capture at handoff.")
+
     # --- Result (always exit 0; advisory only) ---
     print(f"gate: advisory | tier: {args.tier} | model: {model_guard} | budget: {budget} "
-          f"| rolling: {today_tokens}/{rolling_budget}")
+          f"| rolling: {today_tokens}/{rolling_budget} | learn: {learn}")
     for msg in advisories:
         print(f"  info: {msg}")
     return 0

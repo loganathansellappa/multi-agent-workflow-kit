@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-08-11
+
+### Added
+- **Self-learning loop enforcement** (`skills/agent-preflight-check/preflight_gate.py`). The `learning-capture`
+  step could be silently skipped — if `<kbRoot>/lessons-log.jsonl` is never created, captured lessons never
+  accumulate and `episodic_recall` has nothing to serve. The preflight gate (run at task START,
+  advisory-only, always exit 0) now reads `kbRoot` and reports a learning-ledger health field in its stamp:
+  `learn: ok | no-log | stale(Nd) | empty | unconfigured`. `no-log` (capture never ran) and `stale(>7d)`
+  emit an advisory so a skipped LEARN step is impossible to miss at the next task start — the same
+  retrospective-visibility model as the existing budget/model checks. New `LEARN_STALE_DAYS = 7` constant.
+- **Config**: `agents/agents.config.example.yaml` gains a `learning.kbRoot` key so the gate can locate the
+  ledger.
+- **Docs**: `skills/agent-preflight-check/SKILL.md` handoff-stamp contract documents the new `learn:` field
+  and distinguishes it from the task-END `learned:` field emitted by `learning-capture`.
+- **Tests**: `tests/test_preflight_gate.py` — 5 new cases (`no-log`, `ok-when-fresh`, `stale`, `unconfigured`,
+  `empty`); `setUp` now seeds `learning.kbRoot`.
+
 ## [1.7.0] - 2026-08-11
 
 ### Added

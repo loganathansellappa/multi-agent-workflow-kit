@@ -16,6 +16,7 @@ class PreflightGate(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="gate-"))
         self.metrics = self.tmp / "metrics.jsonl"
+        self.lessons = self.tmp / "lessons-log.jsonl"
         self.config = self.tmp / "config.yaml"
         self.config.write_text(f"""\
 outputs:
@@ -23,6 +24,9 @@ outputs:
   budgets:
     perTaskTokenCeiling: 150000
     rollingDailyTokenBudget: 4000000
+
+learning:
+  kbRoot: {self.tmp}
 
 models:
   tiers:
@@ -86,6 +90,46 @@ integrations:
         code, text = self.gate("frontend-developer", "claude-sonnet-5")
         self.assertEqual(code, 0)
         self.assertIn("budget: over", text)
+
+    # Verifies a missing lessons-log (learning-capture never ran) is flagged, never blocks.
+    def test_learn_no_log_flagged(self):
+        code, text = self.gate("frontend-developer", "claude-sonnet-5")  # no lessons-log written
+        self.assertEqual(code, 0)
+        self.assertIn("learn: no-log", text)
+        self.assertIn("never run", text)
+
+    # Verifies a fresh lesson captured today reports a healthy loop.
+    def test_learn_ok_when_fresh(self):
+        today = date.today().isoformat()
+        self.lessons.write_text(f'{{"date":"{today}","lesson":"x","source":"y"}}\n', encoding="utf-8")
+        code, text = self.gate("frontend-developer", "claude-sonnet-5")
+        self.assertEqual(code, 0)
+        self.assertIn("learn: ok", text)
+
+    # Verifies a lessons-log whose newest entry is older than the staleness window is flagged.
+    def test_learn_stale_flagged(self):
+        self.lessons.write_text('{"date":"2000-01-01","lesson":"x","source":"y"}\n', encoding="utf-8")
+        code, text = self.gate("frontend-developer", "claude-sonnet-5")
+        self.assertEqual(code, 0)
+        self.assertIn("learn: stale", text)
+
+    # Verifies a config with no kbRoot key reports unconfigured (never crashes).
+    def test_learn_unconfigured(self):
+        cfg = self.tmp / "nolearn.yaml"
+        cfg.write_text(
+            f"outputs:\n  metricsLog: {self.metrics}\n  budgets:\n"
+            f"    perTaskTokenCeiling: 150000\n    rollingDailyTokenBudget: 4000000\n\n"
+            f"models:\n  agents:\n    frontend-developer: standard\n", encoding="utf-8")
+        code, text = self.gate("frontend-developer", "claude-sonnet-5", config=str(cfg))
+        self.assertEqual(code, 0)
+        self.assertIn("learn: unconfigured", text)
+
+    # Verifies a lessons-log that exists but has no dated entries reports empty.
+    def test_learn_empty_flagged(self):
+        self.lessons.write_text('{"none": true}\n', encoding="utf-8")
+        code, text = self.gate("frontend-developer", "claude-sonnet-5")
+        self.assertEqual(code, 0)
+        self.assertIn("learn: empty", text)
 
 
 if __name__ == "__main__":

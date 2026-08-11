@@ -159,6 +159,10 @@ Optimize for the fewest tokens that preserve context and quality:
 ## Handoff evidence stamp (reliability)
 
 At handoff, emit one concise line so gate execution is auditable, e.g.:
-`preflight: ok | tier: standard | recall: <n found|none> | model: ok | budget: ok | loops: <n> | verify: pass/blocked | guard: on | learned: <n|none> | metrics: written`.
+`preflight: ok | tier: standard | recall: <n found|none> | model: ok | budget: ok | learn: ok | loops: <n> | verify: pass/blocked | guard: on | learned: <n|none> | metrics: written`.
 This turns soft "invoke skill" instructions into a verifiable signal. The `learned:` field comes from
 skill `learning-capture` — a handoff with no `learned:` line means the self-learning step was skipped.
+The distinct `learn:` field is emitted by `preflight_gate.py` at task START and reports the health of the
+self-learning loop from `kbRoot/lessons-log.jsonl` (`ok` | `no-log` = capture has never run | `stale(Nd)` =
+no lesson captured in over 7 days | `empty` | `unconfigured`). A `no-log`/`stale` value means a previous
+handoff skipped LEARN — run skill `learning-capture` this session so the loop recovers.
