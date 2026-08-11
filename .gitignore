@@ -14,3 +14,6 @@ scripts/company-terms.txt
 
 # Rollback snapshots written by sync_from_live.py — local-only, never commit
 .sync-backups/
+
+# Shell-guard runtime markers (per-session, local-only)
+hooks/.readonly-sessions/
