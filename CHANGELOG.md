@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-08-11
+
+### Added
+- **Push-guard per-repo base-branch protection is now auto-wired at install** (`scripts/install_to_copilot.py`,
+  `hooks/push-guard-hook.py`). The hook already protected each repo's configured `baseBranch` (not just the
+  hard-coded `main`/`master`) whenever `PUSH_GUARD_CONFIG` pointed at the per-repo config — but `--hooks`
+  shipped that env value blank, so the feature was effectively off. `install --hooks` now rewrites the
+  installed `kit-hooks.json` so `PUSH_GUARD_CONFIG` points at the live `agents.config.yaml` when it exists
+  (new `_write_hook_config` helper). Effect: a repo whose base is `develop`/`release/x` is protected
+  automatically; config can only ADD protection, never weaken the unconditional `main`/`master` block; a
+  missing/unreadable/malformed config falls back to a blank value + verbatim copy so install never breaks.
+- **Tests**: `tests/test_push_guard.py` — new `HookPerRepoBaseBranch` class (configured `develop` denied for
+  the matching repo incl. force/refs-prefix normalization; allowed without config; does not leak to another
+  repo; `main`/`master` still protected with a config present). `tests/test_install_and_check.py` — new
+  `TestHookConfigWiring` class (wires path when config present; blank when absent; malformed source falls
+  back to copy).
+
 ## [1.6.0] - 2026-08-11
 
 ### Changed

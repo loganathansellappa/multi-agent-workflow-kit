@@ -10,6 +10,7 @@ No network; the hook never runs `git push` itself.
 """
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -30,19 +31,78 @@ def _load(path, name):
 pg = _load(SKILL, "push_guard_mod")
 
 
-def run_hook(cmd, cwd="."):
+def run_hook(cmd, cwd=".", env=None):
     payload = {"toolName": "powershell", "toolArgs": {"command": cmd}, "cwd": cwd}
+    run_env = dict(os.environ)
+    if env:
+        run_env.update(env)
     proc = subprocess.run(
         [sys.executable, str(HOOK)],
-        input=json.dumps(payload), capture_output=True, text=True,
+        input=json.dumps(payload), capture_output=True, text=True, env=run_env,
     )
     assert proc.returncode == 0, f"hook must exit 0, got {proc.returncode}: {proc.stderr}"
     out = proc.stdout.strip()
     return json.loads(out) if out else {}
 
 
-def denied(cmd, cwd="."):
-    return run_hook(cmd, cwd).get("permissionDecision") == "deny"
+def denied(cmd, cwd=".", env=None):
+    return run_hook(cmd, cwd, env).get("permissionDecision") == "deny"
+
+
+class HookPerRepoBaseBranch(unittest.TestCase):
+    """The configurable base-branch feature: when PUSH_GUARD_CONFIG points at a
+    per-repo config, that repo's baseBranch (e.g. develop) is protected too — but
+    only for the matching repo, and never at the cost of main/master coverage."""
+
+    def _cfg(self, tmp, repo_path, base):
+        cfg = tmp / "svc.yaml"
+        cfg.write_text(
+            "services:\n"
+            "  demo:\n"
+            f"    repoPath: {repo_path}\n"
+            f"    baseBranch: {base}\n",
+            encoding="utf-8",
+        )
+        return cfg
+
+    def test_configured_develop_denied_for_matching_repo(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            repo = str(tmp)
+            cfg = self._cfg(tmp, repo, "develop")
+            env = {"PUSH_GUARD_CONFIG": str(cfg)}
+            self.assertTrue(denied("git push origin develop", cwd=repo, env=env))
+            # Normalization still applies on top of the configured base.
+            self.assertTrue(denied("git push origin +refs/heads/develop", cwd=repo, env=env))
+
+    def test_develop_allowed_without_config(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            repo = str(Path(t))
+            # No PUSH_GUARD_CONFIG -> only main/master protected, develop is a task branch.
+            self.assertFalse(denied("git push origin develop", cwd=repo,
+                                    env={"PUSH_GUARD_CONFIG": ""}))
+
+    def test_configured_base_does_not_leak_to_other_repo(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            cfg = self._cfg(tmp, str(tmp / "repoA"), "develop")
+            env = {"PUSH_GUARD_CONFIG": str(cfg)}
+            other = str(tmp / "repoB")
+            # develop is only the base of repoA; in repoB it's an ordinary branch.
+            self.assertFalse(denied("git push origin develop", cwd=other, env=env))
+
+    def test_main_still_protected_even_with_config(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            tmp = Path(t)
+            repo = str(tmp)
+            cfg = self._cfg(tmp, repo, "develop")
+            env = {"PUSH_GUARD_CONFIG": str(cfg)}
+            self.assertTrue(denied("git push origin main", cwd=repo, env=env))
+            self.assertTrue(denied("git push origin master", cwd=repo, env=env))
 
 
 class HookProtectedPushes(unittest.TestCase):

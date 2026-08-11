@@ -73,12 +73,14 @@ cp hooks/hooks.example.json ~/.copilot/hooks/kit-hooks.json
 
 `scripts/install_to_copilot.py --hooks` does the same copy for you.
 
-**Optional — extend the protected set with your configured base branches.**
-Set `PUSH_GUARD_CONFIG` in the `env` block of the installed
-`~/.copilot/hooks/kit-hooks.json` to the absolute path of your
-`service-path.config.yaml`. The hook then also protects each service's
-`baseBranch`, not just `main`/`master`. Leave it empty to protect only
-`main`/`master`.
+**Per-repo base branches — auto-wired by the installer.**
+`scripts/install_to_copilot.py --hooks` now sets `PUSH_GUARD_CONFIG` in the
+installed `~/.copilot/hooks/kit-hooks.json` to the absolute path of your live
+`agents.config.yaml` automatically (when that config exists). The hook then
+also protects each service's configured `baseBranch` (e.g. `develop`,
+`release/x`), not just `main`/`master`. Config can only ADD protection — a
+missing/unreadable config, or a repo not listed in it, still gets the
+unconditional `main`/`master` block. To disable, blank the value out manually.
 
 Restart the CLI (or start a new session) so hooks reload.
 

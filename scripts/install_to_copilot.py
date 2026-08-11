@@ -10,6 +10,7 @@ installed agents, so the drift insurance travels with the pack and privilege dri
 caught on the recipient's machine. Replaces the earlier install-to-copilot.ps1 / .sh.
 """
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -17,7 +18,32 @@ from datetime import datetime
 from pathlib import Path
 
 SUPPORT_FILES = ("agents.config.yaml",)
+CONFIG_FILE = "agents.config.yaml"  # per-repo config the push-guard reads baseBranch from
 BACKUP_KEEP = 3  # rotating backups of live agents+skills kept before each overwrite
+
+
+def _write_hook_config(hook_config_src, dest_path, config_path):
+    """Install the hook registration, wiring PUSH_GUARD_CONFIG to the live per-repo
+    config when it exists so the push-guard protects each repo's configured baseBranch
+    (e.g. develop/release/x), not just the hard-coded main/master. When no config is
+    present the value is left blank — the unconditional main/master protection still
+    applies, so this only ever ADDS coverage. Returns the resolved path (or "")."""
+    resolved = str(config_path) if config_path and config_path.is_file() else ""
+    try:
+        data = json.loads(hook_config_src.read_text(encoding="utf-8"))
+        wired = False
+        for entry in data.get("hooks", {}).get("preToolUse", []):
+            env = entry.get("env")
+            if isinstance(env, dict) and "PUSH_GUARD_CONFIG" in env:
+                env["PUSH_GUARD_CONFIG"] = resolved
+                wired = True
+        if wired:
+            dest_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            return resolved
+    except Exception:
+        pass  # fall back to a verbatim copy so a parse error never blocks install
+    shutil.copy2(hook_config_src, dest_path)
+    return ""
 
 
 def _rotate_backup(dest_copilot, dest_agents, dest_skills):
@@ -110,14 +136,23 @@ def main(argv=None):
         if present and hook_config.is_file():
             for s in present:
                 shutil.copy2(src_hooks / s, dest_hooks / s)
-            # Register under a stable name so re-running is idempotent.
-            shutil.copy2(hook_config, dest_hooks / "kit-hooks.json")
+            # Register under a stable name so re-running is idempotent, wiring
+            # PUSH_GUARD_CONFIG to the live per-repo config so each repo's
+            # configured baseBranch is protected (not just main/master).
+            resolved_cfg = _write_hook_config(
+                hook_config, dest_hooks / "kit-hooks.json", dest_agents / CONFIG_FILE
+            )
             # Remove the legacy single-purpose file so hooks aren't double-registered.
             legacy = dest_hooks / "push-guard.json"
             if legacy.is_file():
                 legacy.unlink()
             print(f"Installed guard hooks ({', '.join(present)}) to {dest_hooks} "
                   "(restart the CLI so hooks reload).")
+            if resolved_cfg:
+                print(f"  push-guard base-branch config wired: {resolved_cfg}")
+            else:
+                print("  push-guard base-branch config NOT wired (no per-repo config found); "
+                      "main/master still protected.")
         else:
             print("WARNING: hooks/ files not found; skipped hook install.", file=sys.stderr)
 
