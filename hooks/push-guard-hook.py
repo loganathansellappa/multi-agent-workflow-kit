@@ -9,7 +9,9 @@ This is the *enforcement* half of the git-push-guard defense-in-depth pair:
     before pushing. It only protects if the agent remembers to invoke it.
   * hooks/push-guard-hook.py (this file) -> the *enforcement* half. The Copilot
     CLI runs it automatically before EVERY shell tool call (bash/powershell),
-    regardless of what the agent "decides". The model cannot skip it.
+    regardless of what the agent "decides". It runs without the agent's
+    cooperation, but is deliberately fail-open (see FAIL BEHAVIOR below) — strong
+    defense-in-depth, not an absolute barrier.
 
 WHY A HOOK (and not just the skill)
 -----------------------------------

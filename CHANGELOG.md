@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-08-11
+
+### Added
+- **Lesson provenance + validation lifecycle (guards against propagating wrong learnings).**
+  `capture_learning.py` now records `validated: false` on every new capture plus optional
+  `--agent` and `--confidence` (low/medium/high) provenance. `episodic_recall.py` marks
+  un-curated lessons `[unverified]` and prints an advisory count, so future sessions treat raw
+  inbox entries as hints — not authority — until `kb-curate` re-verifies them. `kb-curate` gains
+  an explicit "validate the learning inbox" step (confirm → set `validated: true` / promote, or
+  delete if wrong). Backward-compatible: entries without the field recall as `[unverified]`.
+
+### Changed
+- **Honest enforcement wording (docs + docstrings only, no logic change).** Replaced overclaims
+  ("the model can't skip", "100% code-proven", "runtime enforcement") across `OVERVIEW.md`,
+  `README.md`, `hooks/README.md`, `skills/learning-capture` and the hook docstrings with accurate
+  language: hooks are **defense-in-depth and deliberately fail-open** (bypass-resistance depends on
+  coverage; server-side protection is the backstop), and a resolvable source anchor proves the
+  source *exists*, not that the conclusion is correct. Added a **Known limitations & deliberate
+  trade-offs** section to `OVERVIEW.md`.
+
 ## [1.10.1] - 2026-08-11
 
 ### Added

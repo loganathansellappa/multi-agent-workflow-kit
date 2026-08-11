@@ -35,6 +35,20 @@ It reports, all advisory (exit code `0`):
 - **duplicate headings** — same heading appears 2+ times in a page; a lesson likely appended twice.
 - **total KB size** — so growth is visible run over run.
 
+## Validate the learning inbox (`lessons-log.jsonl`) — turn hints into knowledge
+
+New lessons captured during the `LEARN` step are appended to `<kb-root>/lessons-log.jsonl` with
+`validated: false`. Until curated, `episodic_recall` surfaces them to future sessions marked
+`[unverified]` — advisory hints, not authority. Curating them is what makes them trusted:
+
+1. **Re-verify each unverified entry** against the *current* repo at the cited `source` anchor. A
+   resolvable anchor only proves the source exists — confirm the entry's actual conclusion is still true.
+2. **If confirmed** — set `validated: true` on that JSONL line (and promote it into the relevant
+   structured KB page). It will then recall without the `[unverified]` mark.
+3. **If wrong, stale, or unprovable** — delete the line. A wrong lesson recalled as fact is worse than
+   no lesson.
+4. **Never set `validated: true` without re-verification** — that defeats the safeguard.
+
 ## Consolidation procedure (human/agent judgment — the script never edits)
 
 Work only from the linter's findings; make the smallest change that fixes each one:
