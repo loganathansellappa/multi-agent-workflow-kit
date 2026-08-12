@@ -45,6 +45,11 @@ findings into one report. Reviewers and `review-orchestrator` always return find
 `--html-report=true` (default `false`) to any of them to additionally write an HTML report to
 `outputs.reportsRoot`.
 
+> **`--html-report` is not a `copilot` CLI flag** — the CLI only accepts its own fixed options
+> (`--agent`, `-p`/`--prompt`, `--allow-all`, etc.), so passing `--html-report=true` as a separate
+> command-line argument fails with `error: unknown option`. Put it inside the quoted `--prompt`/`-p` text
+> instead, e.g. `copilot --agent code-reviewer --prompt "<branch> --html-report=true" --allow-all`.
+
 ---
 
 ## What's inside

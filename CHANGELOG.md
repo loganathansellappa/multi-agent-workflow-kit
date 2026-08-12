@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.12.1] - 2026-08-12
+
+### Fixed
+- **Clarified `--html-report` is not a `copilot` CLI flag (docs-only fix, no behavior change).** The
+  1.12.0 docs implied `--html-report=true` could be passed as a top-level CLI argument, which fails with
+  `error: unknown option` since the CLI only accepts its own fixed option set. Corrected `code-reviewer`,
+  `security-reviewer`, `review-orchestrator`, and `README.md` to show the argument embedded inside the
+  quoted `--prompt`/`-p` text instead.
+
 ## [1.12.0] - 2026-08-12
 
 ### Added

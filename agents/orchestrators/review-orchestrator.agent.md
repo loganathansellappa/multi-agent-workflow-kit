@@ -36,6 +36,9 @@ only.
   by the user, open it. If invoked by another agent (e.g. `feature-orchestrator`), still write the file but
   there is no need to open it.
 - Never write a report when there are no findings, regardless of the argument.
+- **`--html-report` is NOT a `copilot` CLI flag** — the CLI only accepts its own fixed options (`--agent`,
+  `-p`/`--prompt`, `--allow-all`, etc.); an unrecognized top-level flag fails with `error: unknown option`.
+  Put it inside the quoted `--prompt`/`-p` text instead: `copilot --agent review-orchestrator --prompt "<branch> --html-report=true" --allow-all`.
 
 ## Definition of done
 
