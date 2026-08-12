@@ -26,6 +26,17 @@ only.
 7. **Only produce a findings report when there are real findings.** If everything is
    0 Critical / 0 High / 0 Medium, say so briefly and stop.
 
+## HTML report (opt-in — default `false`)
+
+- The aggregated report is always returned as structured text. Additionally render and write it as HTML
+  **only** when the caller explicitly passes `--html-report=true` (boolean, **default `false`**) — never
+  write any file otherwise, whether invoked directly or by another agent.
+- When `--html-report=true` and there are findings, write the report to
+  `<outputs.reportsRoot>/<component>/review-report.html` from `agents.config.yaml` and, if invoked directly
+  by the user, open it. If invoked by another agent (e.g. `feature-orchestrator`), still write the file but
+  there is no need to open it.
+- Never write a report when there are no findings, regardless of the argument.
+
 ## Definition of done
 
 - Every changed component group was routed to a reviewer.

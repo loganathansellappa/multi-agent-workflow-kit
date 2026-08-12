@@ -41,7 +41,9 @@ your own stack in minutes — with cost governance and a quality loop built in.
 ```
 
 A separate **`review-orchestrator`** can route an existing diff to the right reviewers and aggregate their
-findings into one report.
+findings into one report. Reviewers and `review-orchestrator` always return findings as text; pass
+`--html-report=true` (default `false`) to any of them to additionally write an HTML report to
+`outputs.reportsRoot`.
 
 ---
 

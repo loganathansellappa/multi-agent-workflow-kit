@@ -14,7 +14,8 @@
 # =============================================================================
 
 outputs:
-  # Where agents write review reports and the metrics log.
+  # Where agents write review reports and the metrics log. Reviewer/orchestrator HTML reports
+  # are opt-in (pass --html-report=true; default false) — see agents/reviewers/*.agent.md.
   reportsRoot: <REPORTS>
   metricsLog: <REPORTS>/agent-metrics.jsonl
   budgets:
