@@ -43,6 +43,9 @@ serialization/deserialization, cryptography, secrets, or rendering of untrusted 
   invoked directly by the user, open it. If invoked by another agent, still write the file but there is no
   need to open it.
 - Never write a report when there are no findings, regardless of the argument.
+- **`--html-report` is NOT a `copilot` CLI flag** — the CLI only accepts its own fixed options (`--agent`,
+  `-p`/`--prompt`, `--allow-all`, etc.); an unrecognized top-level flag fails with `error: unknown option`.
+  Put it inside the quoted `--prompt`/`-p` text instead: `copilot --agent security-reviewer --prompt "<branch> --html-report=true" --allow-all`.
 
 ## Operational Hardening
 
