@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.12.0] - 2026-08-12
+
+### Added
+- **Opt-in HTML report for all reviewer agents (default `false`).** `code-reviewer`,
+  `security-reviewer`, and `review-orchestrator` now support a `--html-report` boolean argument
+  (default `false`): findings are always returned as text, and an HTML file is written to
+  `<outputs.reportsRoot>/<component>/...-report.html` only when the caller explicitly passes
+  `--html-report=true`. Documented in each agent file, `README.md`, and
+  `agents.config.example.yaml`.
+
 ## [1.11.0] - 2026-08-11
 
 ### Added

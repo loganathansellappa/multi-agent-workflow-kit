@@ -33,6 +33,17 @@ serialization/deserialization, cryptography, secrets, or rendering of untrusted 
   exploit impact, and a concrete remediation. State a confidence level for each: report high-confidence exploitable issues as **Confirmed** (blocking) and list lower-confidence ones under **"Low confidence / needs verification"** (advisory — see the confidence tiers in that skill).
 - Ignore non-security style/nits. Clean result = **0 Critical / 0 High / 0 Medium**.
 
+## HTML report (opt-in — default `false`)
+
+- Findings are always returned as structured text. Additionally render and write an HTML report **only**
+  when the caller explicitly passes `--html-report=true` (boolean, **default `false`**) — never write any
+  file otherwise, whether invoked directly or by another agent.
+- When `--html-report=true` and there are findings, write the report to
+  `<outputs.reportsRoot>/<component>/security-reviewer-report.html` from `agents.config.yaml` and, if
+  invoked directly by the user, open it. If invoked by another agent, still write the file but there is no
+  need to open it.
+- Never write a report when there are no findings, regardless of the argument.
+
 ## Operational Hardening
 
 - Invoke skill `agent-preflight-check` at the start.
