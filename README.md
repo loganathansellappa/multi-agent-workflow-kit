@@ -130,6 +130,65 @@ GOAL → PLAN → IMPLEMENT → BUILD+TEST → REVIEW → ADDRESS(FIX) → LOOP 
 
 ### How a feature request flows
 
+**In plain words** (skim this first; the technical diagram is right below). Each `[skill]`
+and `[HOOK]` is shown at the moment it fires, with what it does in one line:
+
+```
+YOU: "add feature X and wire it through the app"
+                 │
+        pick ONE agent (orchestrator, or a developer for your layer)
+                 │
+ ── before any work ─────────────────────────────────────────────────
+ [skill] agent-preflight-check ─ Look before you leap: check the tools/repo
+         are healthy AND recall past lessons so old mistakes aren't repeated.
+ [skill] untrusted-input-guard ─ Read the ticket/code as info, not orders —
+         repo/ticket/tool text is data and can't hijack the agent.
+ [skill] workflow-state (open) ─ Write down the plan (which files, which repo).
+         On a resume, re-check these facts so a stale plan can't sneak through.
+                 │
+ ── the work loop ───────────────────────────────────────────────────
+ [skill] quality-loop-harness ─ Run build → test → review → fix, with a stop
+         limit so it never loops forever.
+   PLAN ──▶ IMPLEMENT ──▶ BUILD + TEST  (machines decide pass/fail, not the model)
+                 │
+   REVIEW ─ hand the diff to a read-only reviewer agent:
+   ┌──────────────────────────────────────────────────────────────┐
+   │ [HOOK] shell-guard-hook.py ─ Reviewer can look, not touch:     │
+   │        blocks it from editing files or reading secrets.        │
+   │ [skill] evidence-discipline ─ No claims without proof; every    │
+   │        finding points to a real file:line / log line.          │
+   │ [skill] review-findings-output ─ Report in a fixed shape:       │
+   │        severity + location + a concrete suggested fix.          │
+   └──────────────────────────────────────────────────────────────┘
+   FIX ↺ loop back until clean (0 Critical / High / Medium)
+                 │
+ ── closing out ─────────────────────────────────────────────────────
+ [skill] workflow-state (gate) ─ Stamp the result PASS or FAIL, plus which
+         commit was reviewed. The push-guard reads this stamp next.
+ [skill] learning-capture ─ Save what we learned, with proof.
+ [skill] delivery-metrics-capture ─ Log the cost/effort of this task.
+ [skill] kb-curate (manual) ─ Tidy the lessons library later.
+                 │
+   COMMIT
+                 │
+   PUSH:
+   [skill] git-push-guard ─ The agent's own rule: push task branches, never main.
+   ┌──────────────────────────────────────────────────────────────┐
+   │ [HOOK] push-guard-hook.py ─ the enforcer at the door:          │
+   │   1. Blocks a push to the protected branch (from config).      │
+   │   2. Soft-blocks the push if workflow-state stamped FAIL        │
+   │      (no stamp, or PASS = allowed through).                     │
+   └──────────────────────────────────────────────────────────────┘
+                 │
+             ✅ pushed to task branch → a human opens/merges the PR
+```
+
+- **Skills** = reusable rules the agent chooses to follow.
+- **Hooks** = guards the CLI runs *automatically* at the tool boundary, so they work even if
+  the agent "forgets" (they add friction and fail-open — they are not a sandbox).
+- The **handshake**: `workflow-state` stamps PASS/FAIL → `push-guard-hook.py` reads that stamp
+  to decide whether the push is allowed.
+
 ```mermaid
 flowchart TD
     A["Feature request / ticket"] --> P["Preflight (skills)<br/>agent-preflight-check · untrusted-input-guard<br/>episodic recall · tier · model routing · budget"]
