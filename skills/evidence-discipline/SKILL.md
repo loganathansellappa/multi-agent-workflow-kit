@@ -70,6 +70,20 @@ Rules for the ledger:
 - Any number, version, timeout, port, config key, or absolute claim ("always/never") you assert in prose
   must have a corresponding OBSERVED ledger row — or be marked INFERRED.
 
+## Anchor evidence to a commit (so stale evidence is caught)
+
+A `file:line` proves the source *exists*; it does not prove the citation still points at the same code
+after the tree changes. Stamp the commit your evidence was gathered at, so a later run can detect drift:
+
+```
+python skills/workflow-state/workflow_state.py --repo <repoPath> set-evidence
+```
+
+On a resumed session, `workflow_state.py --repo <repoPath> validate` flags the evidence as **STALE** when
+`HEAD` has moved (or the working tree has uncommitted edits) since it was stamped — re-read and re-cite
+before relying on it. (A `file:line` anchor proves the source exists; it never proves the *conclusion* you
+drew from it — verify the reasoning too.)
+
 ## Mandatory pre-handoff self-audit (do NOT skip)
 
 Before you hand off, plan, or close a loop, run the deterministic linter on your own output and fix

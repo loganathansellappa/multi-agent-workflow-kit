@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.13.0] - 2026-09-30
+
+### Added
+- **New `workflow-state` skill — deterministic per-run state with resume-time re-validation.** Adds
+  `skills/workflow-state/workflow_state.py` (stdlib-only CLI) + `SKILL.md`. State is stored per repo at
+  `.git/copilot-workflow-state.json` and each record is stamped with the git commit it was made at.
+  Subcommands: `set-plan`, `set-gate`, `set-review`, `set-evidence`, `set-stage`, `set-terminal`, `get`,
+  `gate-status`, `drift`, `governance-check`, `validate`. It provides:
+  - **Scope-drift detection:** `drift` warns when changed files fall outside the recorded plan.
+  - **Stale-evidence / review anchoring:** `set-review`/`set-evidence` auto-stamp `HEAD`; `validate` flags
+    them STALE once `HEAD` moves past that commit **or** the working tree has uncommitted edits.
+  - **Safe resume:** `validate` re-checks saved gate/review/evidence against the live repo — a restored
+    *chat* is not a restored *work state*.
+  - **Explicit terminal/block states:** `set-terminal` records an outcome from a fixed enum (`SUCCESS`,
+    `FAILED`, `BLOCKED`, `NEEDS_CLARIFICATION`, `NEEDS_AUTHORIZATION`, `NEEDS_HUMAN_REVIEW`,
+    `TECHNICAL_BLOCK`, `POLICY_BLOCK`, `ENVIRONMENT_FAILURE`, …).
+  - **Governance warn:** `governance-check` flags edits to governance files (`*.agent.md`, policy,
+    `agents.config.yaml`) — **warn-only**, never blocks.
+- **Push-guard soft gate-status block.** `hooks/push-guard-hook.py` now also denies a `git push` when the
+  repo's recorded `workflow-state` gate is `FAIL`. Deliberately **soft** — a missing record (ad-hoc push)
+  or a `PASS` gate is allowed, so repos that don't use workflow-state are unaffected.
+- Tests: `tests/test_workflow_state.py` (15 tests: core CLI + push-guard gate block + regressions for
+  non-ASCII paths, Windows `-C` path extraction, corrupt-state handling, and uncommitted-edit freshness).
+
+### Changed
+- `agents/orchestrators/feature-orchestrator.agent.md` — wired `workflow-state` into Operational
+  Hardening (validate-first-on-resume, plan/gate/review/evidence stamping, drift-before-push,
+  set-terminal, and record `set-gate --status FAIL` on a blocked gate).
+- Docs: `evidence-discipline/SKILL.md` (commit-anchoring note), `git-push-guard/SKILL.md` (soft
+  gate-status block), `hooks/README.md`, `README.md` (skills table), `OVERVIEW.md` (skill list + hook
+  bullet).
+
 ## [1.12.1] - 2026-08-12
 
 ### Fixed
