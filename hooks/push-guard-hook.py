@@ -47,8 +47,18 @@ The installed hook command also appends `|| exit 0` (see hooks.example.json) so
 that even "python not found" fails open rather than bricking the whole session.
 
 Protected set: {main, master} always, plus the repo's configured `baseBranch`
-from agents.config.yaml when PUSH_GUARD_CONFIG points at it (config can only ADD
-protection, never remove it). This mirrors skills/git-push-guard/push_guard.py.
+from agents.config.yaml when PUSH_GUARD_CONFIG points at it (config can
+only ADD protection, never remove it). This mirrors
+skills/git-push-guard/push_guard.py.
+
+SOFT GATE-STATUS BLOCK (workflow-state integration)
+---------------------------------------------------
+Beyond protected branches, this hook also denies a push whose repo has a
+workflow-state record with a gate status of FAIL (written by
+skills/workflow-state/workflow_state.py). This is deliberately SOFT: if no
+workflow-state file exists (ad-hoc push) or the gate is PASS/unknown, the push
+is allowed. So the two block conditions are: (a) target is a protected branch,
+OR (b) a gate is recorded AND it is FAIL. Everything else is allowed.
 
 Stdlib only; cross-platform; no network. Never runs `git push` itself.
 """
@@ -59,6 +69,8 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+WORKFLOW_STATE_BASENAME = "copilot-workflow-state.json"
 
 # Always-protected branch names, regardless of any config. Unconditional.
 HARD_PROTECTED = {"main", "master"}
@@ -168,6 +180,25 @@ def repo_from_tokens(tokens, default_cwd):
     return default_cwd
 
 
+# Matches `-C <path>` in a raw statement: a double/single-quoted path, or a bare
+# unquoted run of non-space chars. Captured from the RAW text (not shlex tokens)
+# so Windows backslashes survive — shlex.split(posix=True) silently eats them,
+# which would mangle the repo path and make protected-branch/config and gate
+# lookups fail open (review F3).
+_DASH_C_RE = re.compile(r"(?:^|\s)-C\s+(?:\"([^\"]+)\"|'([^']+)'|(\S+))")
+
+
+def repo_from_statement(statement, tokens, default_cwd):
+    """Resolve the repo path for a `git -C <path> push`, preserving backslashes.
+
+    Extract `-C <path>` from the raw statement first (so Windows paths are intact),
+    then fall back to the shlex-token method, then the cwd."""
+    m = _DASH_C_RE.search(statement)
+    if m:
+        return m.group(1) or m.group(2) or m.group(3)
+    return repo_from_tokens(tokens, default_cwd)
+
+
 def git_current_branch(repo):
     try:
         out = subprocess.run(
@@ -270,6 +301,33 @@ def protected_set(repo):
     return protected
 
 
+def gate_status(repo):
+    """Read the workflow-state gate status for `repo`, or None when absent.
+
+    Mirrors skills/workflow-state/workflow_state.py state location so the hook
+    stays a single portable file with no import. Any failure -> None (soft:
+    an unreadable/missing record never blocks an otherwise-allowed push).
+
+    Note: this checks BOTH the .git/ location and the dotfile fallback, whereas
+    the writer picks exactly one (.git/ when present). In the rare case a repo had
+    a fallback file written pre-`git init` and was later `git init`'d, the hook
+    may read a stale fallback the writer no longer updates; re-run `set-gate` to
+    refresh the .git/ record."""
+    try:
+        repo_path = Path(repo)
+        candidates = [repo_path / ".git" / WORKFLOW_STATE_BASENAME,
+                      repo_path / ("." + WORKFLOW_STATE_BASENAME)]
+        for p in candidates:
+            if p.is_file():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                gate = data.get("gate") or {}
+                status = gate.get("status")
+                return status.upper() if isinstance(status, str) else None
+    except Exception:
+        return None
+    return None
+
+
 def main():
     payload = read_payload()
     cmd = extract_command(payload)
@@ -282,7 +340,7 @@ def main():
         tokens = tokenize(statement)
         if not is_git_push(tokens):
             continue
-        repo = repo_from_tokens(tokens, cwd)
+        repo = repo_from_statement(statement, tokens, cwd)
         protected = protected_set(repo)
 
         targets, wildcard = push_targets(tokens, repo)
@@ -308,6 +366,16 @@ def main():
                     "`git push`. Re-run with an explicit refspec (e.g. `git push origin "
                     "<your-task-branch>`) so the guard can verify it is not protected."
                 )
+        # Soft gate-status block: only when a gate is RECORDED and it is FAIL.
+        # No record (ad-hoc push) or PASS -> allowed.
+        if gate_status(repo) == "FAIL":
+            deny(
+                "git-push-guard: refusing to push — the recorded workflow-state gate for "
+                "this repo is FAIL. Fix the underlying gate, re-run the deterministic gate "
+                "to PASS, then record it with `workflow_state.py --repo <repo> set-gate "
+                "--status PASS` before pushing. (Do not just overwrite the record to bypass "
+                "the block.)"
+            )
     allow()
 
 

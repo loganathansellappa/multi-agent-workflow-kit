@@ -94,6 +94,11 @@ Restart the CLI (or start a new session) so hooks reload.
 * **Denies** (with an actionable reason) a push whose target branch is
   `main`/`master`/configured `baseBranch`, including `HEAD:main`, `:main`
   (delete), force-push variants, and `git push --all`/`--mirror`.
+* **Soft gate-status block:** also denies a push when the repo's recorded
+  `workflow-state` gate is `FAIL` (written by
+  `skills/workflow-state/workflow_state.py`). If no record exists (ad-hoc push) or
+  the gate is `PASS`, the push is allowed — so this never blocks pushes in repos
+  that don't use workflow-state.
 * If it matches a push but cannot resolve the target branch, it denies that
   push specifically and asks for an explicit refspec.
 

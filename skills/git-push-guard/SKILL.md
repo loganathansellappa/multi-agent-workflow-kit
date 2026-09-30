@@ -66,3 +66,17 @@ python <copilot-skills-dir>/git-push-guard/push_guard.py \
 Include the result in your evidence output, e.g.:
 `push-guard: allowed | target-branch: 1234-add-user-permissions` or
 `push-guard: blocked | target-branch: main | action: skipped push, handed off to developer`.
+
+## Soft gate-status block (workflow-state)
+
+The enforcement hook (`hooks/push-guard-hook.py`) adds one more refusal on top of the protected-branch
+check: it denies a push when the repo's recorded `workflow-state` gate is **FAIL**. This is deliberately
+**soft** — if no workflow-state record exists (an ad-hoc push) or the gate is `PASS`, the push proceeds.
+So keep the gate status current:
+
+```
+python skills/workflow-state/workflow_state.py --repo <repoPath> set-gate --status PASS   # or FAIL
+```
+
+Do not work around a gate-FAIL block by overwriting the record just to push; fix the underlying gate and
+re-record `PASS`.

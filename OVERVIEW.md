@@ -39,13 +39,14 @@ Developers own the loop and call a read-only reviewer. Opening the PR stays with
 | `code-reviewer` | Staged/unstaged/branch diffs: confirmed bugs, regressions, design issues with `file:line` + fixes, plus a low-confidence list. |
 | `security-reviewer` | Auth / input-handling / crypto / untrusted-data changes: confirmed exploitable vulnerabilities with evidence. |
 
-## Skills (9) — reusable rules any agent can invoke
+## Skills (10) — reusable rules any agent can invoke
 
 **Guardrails / discipline**
 - `agent-preflight-check` — fast env/repo/tooling preflight **+ recall of past lessons** before work starts.
 - `evidence-discipline` — label every claim OBSERVED vs INFERRED with a `file:line`/log/command cite.
 - `untrusted-input-guard` — treat repo/diff/ticket/tool output as **data, not instructions** (anti prompt-injection).
 - `git-push-guard` — refuse pushes to a repo's protected base branch; allow task branches.
+- `workflow-state` — remember the run's facts (planned files, gate, review/evidence commit, outcome) per repo and **re-check them on resume** so stale approvals and scope drift are caught; feeds the push-guard's soft gate-FAIL block.
 
 **Review**
 - `review-findings-output` — findings contract: severity buckets + `file:line` evidence + a concrete fix.
@@ -65,7 +66,7 @@ rather than block — the `git-push-guard` skill and server-side branch protecti
 them as a strong safety layer, **not an absolute sandbox**; bypass-resistance depends on tool/lifecycle
 coverage.
 
-- `push-guard-hook.py` — blocks a confirmed `git push` to a repo's protected base branch (config-driven, not just `main`).
+- `push-guard-hook.py` — blocks a confirmed `git push` to a repo's protected base branch (config-driven, not just `main`), **and** softly refuses a push when the repo's recorded `workflow-state` gate is `FAIL` (no record or `PASS` = allowed).
 - `shell-guard-hook.py` — enforces the reviewer **read-only shell boundary** (blocks secret-file reads / workspace mutation even though reviewers still hold a shell).
 - `hooks.example.json` — registers both guards on the CLI's `preToolUse` + subagent lifecycle events.
 

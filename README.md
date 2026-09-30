@@ -89,6 +89,7 @@ tests/             unit tests for the tooling
 | `delivery-metrics-capture` | Capture lightweight per-task metrics for trend tracking (incl. the `learned:` self-learning signal). |
 | `kb-curate` | Periodic KB maintenance: dedup, trim stale, split oversized pages so the KB stays small and cheap to read (with a read-only `kb_lint.py` signal). |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
+| `workflow-state` | Deterministic per-repo memory of the run's facts (planned files, gate status, review/evidence commit, outcome), each stamped with the git commit it was made at. On resume it **re-checks those facts against live git** — catching scope drift and stale approvals that a restored chat alone would miss — and feeds the push-guard's soft gate-FAIL block. Stage-level recovery; complements (never replaces) server-side branch protection and CI. |
 
 ### Hooks (policy enforced at the CLI tool boundary)
 
