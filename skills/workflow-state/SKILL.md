@@ -23,9 +23,11 @@ committed). Stdlib only, no network, never mutates the repo.
 | After a layer review passes | `... --repo <R> set-review --layer backend --status PASS` |
 | After the deterministic gate | `... --repo <R> set-gate --status PASS` — or `--status FAIL --detail "<why>"` when it does **not** pass (never leave a failed gate unrecorded) |
 | After gathering evidence | `... --repo <R> set-evidence` |
+| At each routing/conclusion decision | `... --repo <R> log-decision --decision delegate --choice <agent> --alternatives <...> --reason <...> --evidence <...> [--confidence 0..1]` |
 | Before push / at handoff | `... --repo <R> drift` and `... --repo <R> governance-check` |
 | On terminal outcome | `... --repo <R> set-terminal --state SUCCESS` (see states below) |
 | **On resume (first thing)** | `... --repo <R> validate` |
+| Audit/replay the run's decisions | `... --repo <R> decisions` |
 
 `set-gate`, `set-review`, and `set-evidence` stamp the current `HEAD` SHA automatically, so any
 later check can tell whether the record is still fresh.
@@ -66,6 +68,29 @@ called out in the handoff for explicit human review.
 `set-terminal --state <X>` accepts: `SUCCESS`, `FAILED`, `BLOCKED`, `ESCALATED`, `LOOP_LIMIT`,
 `BUDGET_EXCEEDED`, `NEEDS_CLARIFICATION`, `NEEDS_AUTHORIZATION`, `NEEDS_HUMAN_REVIEW`,
 `TECHNICAL_BLOCK`, `POLICY_BLOCK`, `ENVIRONMENT_FAILURE`. Use these instead of looping forever.
+
+## Decision ledger (`log-decision` / `decisions`) — audit only
+
+An **append-only** record of *why* the orchestrator made each routing/conclusion
+decision, so a run can be reconstructed after `/resume` instead of re-reading the
+whole transcript. Each entry stamps the current HEAD and stores: the decision kind
+(`delegate` / `conclude` / `expand-scope` / …), the `choice`, the `alternatives`
+considered, one or more `reason`s, cited `evidence`, and an optional `confidence`.
+
+```
+python <skills>/workflow-state/workflow_state.py --repo <R> log-decision \
+  --decision delegate --choice backend-developer \
+  --alternatives frontend-developer do_not_delegate \
+  --reason "files under backend/" "API acceptance criterion" \
+  --evidence "git diff" "repo structure" --confidence 0.94
+python <skills>/workflow-state/workflow_state.py --repo <R> decisions   # read back
+```
+
+It is deliberately **audit-only**: it never enforces, blocks, or gates anything
+(the deterministic gate, `validate`, and the push-guard remain the control plane).
+`validate` only prints a one-line count. Log a decision at each delegation and at
+the final conclude; skip trivial no-choice steps. Entries are immutable — a
+correction is a new entry, never an edit.
 
 ## Honest limits
 

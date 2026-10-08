@@ -42,7 +42,7 @@ SCHEMA = 1
 STATE_BASENAME = "copilot-workflow-state.json"
 
 # Explicit terminal states (review #11). Storage lives here; the human-readable
-# schema is documented in the e2e agent's HANDOFF section.
+# schema is documented in the orchestrator agent's HANDOFF section.
 TERMINAL_STATES = {
     "SUCCESS", "FAILED", "BLOCKED", "ESCALATED", "LOOP_LIMIT", "BUDGET_EXCEEDED",
     "NEEDS_CLARIFICATION", "NEEDS_AUTHORIZATION", "NEEDS_HUMAN_REVIEW",
@@ -78,7 +78,7 @@ def _load(repo: Path) -> dict:
                   f"({exc}); treating as empty", file=sys.stderr)
     return {"schema": SCHEMA, "repo": str(repo), "updated_at": None,
             "stage": None, "terminal": None, "plan": None, "gate": None,
-            "reviews": {}, "evidence": None}
+            "reviews": {}, "evidence": None, "decisions": []}
 
 
 def _save(repo: Path, state: dict):
@@ -213,6 +213,54 @@ def cmd_set_terminal(repo, args):
     return 0
 
 
+def cmd_log_decision(repo, args):
+    """Append one orchestrator decision to the ledger (review #3).
+
+    Append-only, SHA-stamped record of *why* a routing/conclusion decision was
+    made: the choice, the alternatives considered, the reasons, the cited
+    evidence, and an optional confidence. Never mutates prior entries, so the
+    ledger is a durable audit trail that survives /resume and can be read back
+    with `get`. Lightweight by design: no enforcement, no network, no LLM."""
+    st = _load(repo)
+    entry = {
+        "decision": args.decision,
+        "choice": args.choice,
+        "alternatives": list(args.alternatives or []),
+        "reason": list(args.reason or []),
+        "evidence": list(args.evidence or []),
+        "confidence": args.confidence,
+        "sha": _head_sha(repo),
+        "at": _now(),
+    }
+    st.setdefault("decisions", []).append(entry)
+    _save(repo, st)
+    conf = "" if args.confidence is None else f" | confidence={args.confidence}"
+    print(f"workflow-state: decision logged | {args.decision} -> {args.choice} "
+          f"| alts={len(entry['alternatives'])} reasons={len(entry['reason'])} "
+          f"evidence={len(entry['evidence'])}{conf} | #{len(st['decisions'])}")
+    return 0
+
+
+def cmd_decisions(repo, args):
+    """Print the decision ledger (newest last) for audit/replay."""
+    st = _load(repo)
+    decisions = st.get("decisions") or []
+    if not decisions:
+        print("workflow-state decisions: none recorded.")
+        return 0
+    print(f"workflow-state decisions: {len(decisions)} recorded")
+    for i, d in enumerate(decisions, 1):
+        conf = "" if d.get("confidence") is None else f" (confidence={d['confidence']})"
+        print(f"  #{i} [{d.get('at')}] {d.get('decision')} -> {d.get('choice')}{conf} @ {d.get('sha')}")
+        if d.get("alternatives"):
+            print(f"       alternatives: {', '.join(d['alternatives'])}")
+        for r in d.get("reason", []):
+            print(f"       reason: {r}")
+        for e in d.get("evidence", []):
+            print(f"       evidence: {e}")
+    return 0
+
+
 def cmd_get(repo, args):
     print(json.dumps(_load(repo), indent=2))
     return 0
@@ -342,6 +390,10 @@ def cmd_validate(repo, args):
     if term:
         print(f"  terminal: {term.get('state')}")
 
+    decisions = st.get("decisions") or []
+    if decisions:
+        print(f"  decisions: {len(decisions)} logged (audit only; see `decisions`)")
+
     if problems:
         print("workflow-state validate: NOT SAFE TO RESUME AS-IS -")
         for p in problems:
@@ -383,6 +435,18 @@ def build_parser():
     p.add_argument("--state", required=True)
     p.add_argument("--note", default="")
     p.set_defaults(fn=cmd_set_terminal)
+
+    p = sub.add_parser("log-decision", help="append one orchestrator decision (audit ledger)")
+    p.add_argument("--decision", required=True, help="kind of decision, e.g. delegate|conclude|expand-scope")
+    p.add_argument("--choice", required=True, help="what was chosen, e.g. backend-developer|DONE")
+    p.add_argument("--alternatives", nargs="*", default=[], help="options considered but not chosen")
+    p.add_argument("--reason", nargs="*", default=[], help="one or more reasons for the choice")
+    p.add_argument("--evidence", nargs="*", default=[], help="cited evidence (file:line, command, diff)")
+    p.add_argument("--confidence", type=float, default=None, help="optional 0..1 confidence")
+    p.set_defaults(fn=cmd_log_decision)
+
+    p = sub.add_parser("decisions", help="print the decision ledger (audit/replay)")
+    p.set_defaults(fn=cmd_decisions)
 
     p = sub.add_parser("get", help="print the full state JSON")
     p.set_defaults(fn=cmd_get)

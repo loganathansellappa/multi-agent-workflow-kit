@@ -213,5 +213,55 @@ class PushGuardGateBlock(unittest.TestCase):
             self.assertTrue(denied("git push origin main", cwd=repo))
 
 
+class DecisionLedger(unittest.TestCase):
+    """Append-only decision ledger (audit-only; must never gate/block)."""
+
+    def test_log_and_read_back(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            repo = make_repo(t)
+            rc, _ = wfs(repo, "log-decision", "--decision", "delegate",
+                        "--choice", "backend-developer",
+                        "--alternatives", "frontend-developer", "do_not_delegate",
+                        "--reason", "files under backend/",
+                        "--evidence", "git diff", "--confidence", "0.9")
+            self.assertEqual(rc, 0)
+            self.assertEqual(wfs(repo, "log-decision", "--decision", "conclude",
+                                 "--choice", "DONE")[0], 0)
+            rc, out = wfs(repo, "decisions")
+            self.assertEqual(rc, 0)
+            self.assertIn("2 recorded", out)
+            self.assertIn("backend-developer", out)
+            self.assertIn("DONE", out)
+
+    def test_ledger_persisted_and_append_only(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            repo = make_repo(t)
+            wfs(repo, "log-decision", "--decision", "delegate", "--choice", "a")
+            wfs(repo, "log-decision", "--decision", "delegate", "--choice", "b")
+            state = json.loads((repo / ".git" / "copilot-workflow-state.json")
+                               .read_text(encoding="utf-8"))
+            self.assertEqual([d["choice"] for d in state["decisions"]], ["a", "b"])
+            self.assertIsNotNone(state["decisions"][0]["sha"])
+
+    def test_decisions_audit_only_does_not_block_validate(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            repo = make_repo(t)
+            wfs(repo, "log-decision", "--decision", "conclude", "--choice", "DONE")
+            rc, out = wfs(repo, "validate")
+            self.assertEqual(rc, 0)                 # ledger never makes resume unsafe
+            self.assertIn("decisions: 1 logged", out)
+
+    def test_decisions_empty_is_ok(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            repo = make_repo(t)
+            rc, out = wfs(repo, "decisions")
+            self.assertEqual(rc, 0)
+            self.assertIn("none recorded", out)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
