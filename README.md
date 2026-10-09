@@ -50,6 +50,23 @@ findings into one report. Reviewers and `review-orchestrator` always return find
 > command-line argument fails with `error: unknown option`. Put it inside the quoted `--prompt`/`-p` text
 > instead, e.g. `copilot --agent code-reviewer --prompt "<branch> --html-report=true" --allow-all`.
 
+Once a PR exists, the **`pr-comment-respond`** skill closes the review comment loop from inside a session:
+it addresses reviewer comments on a PR you authored (judge → delegate the fix to the owning developer
+agent → reply + resolve) and posts a review you were asked to do — both behind a confirmation gate, and
+both through a humanize + slophound gate so nothing posts in AI voice.
+
+```
+  reviewer comments on YOUR PR  ─┐
+                                 ├─▶ pr-comment-respond ─▶ judge vs real code ─▶ delegate fix
+  "review PR X and comment"  ────┘        │                                        to dev agent
+                                          ▼                                            │
+                              humanize + slophound gate ◀── confirmation gate ◀────────┘
+                                          │
+                                          ▼
+                                 reply + resolve / post findings (human voice)
+```
+
+
 ---
 
 ## What's inside
@@ -63,7 +80,8 @@ agents/
 skills/            reusable procedures agents invoke by name
   agent-preflight-check, quality-loop-harness, review-findings-output,
   untrusted-input-guard, evidence-discipline, learning-capture,
-  delivery-metrics-capture, kb-curate, git-push-guard
+  delivery-metrics-capture, kb-curate, git-push-guard, workflow-state,
+  pr-comment-respond
 hooks/             runtime CLI hooks (push-guard preToolUse enforcement)
 kb/                knowledge-base pattern + example skeleton
 scripts/           cross-platform Python tooling (stdlib only)
@@ -90,6 +108,7 @@ tests/             unit tests for the tooling
 | `kb-curate` | Periodic KB maintenance: dedup, trim stale, split oversized pages so the KB stays small and cheap to read (with a read-only `kb_lint.py` signal). |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 | `workflow-state` | Deterministic per-repo memory of the run's facts (planned files, gate status, review/evidence commit, outcome), each stamped with the git commit it was made at. On resume it **re-checks those facts against live git** — catching scope drift and stale approvals that a restored chat alone would miss — and feeds the push-guard's soft gate-FAIL block. Includes an **append-only decision ledger** (`log-decision`/`decisions`) that records *why* each routing/conclusion choice was made (choice, alternatives, reasons, cited evidence, confidence) for audit/replay after `/resume` — audit-only, never gates or blocks. Stage-level recovery; complements (never replaces) server-side branch protection and CI. |
+| `pr-comment-respond` | Close the loop on PR review comments two ways: **inbound** (reviewers commented on your PR → judge each against the real code → delegate the fix to the owning component's developer agent → reply + resolve behind a confirmation gate) and **authoring** (review a diff, then post comments after a confirmation gate). Every reply/comment passes a **humanize + slophound gate** (strips AI punctuation tells, rejects slop) so feedback never posts in AI voice. Config-driven routing (reuses your `services:` map); Bitbucket reference adapter with GitHub/GitLab/Bitbucket-Cloud documented. |
 
 ### Hooks (policy enforced at the CLI tool boundary)
 
@@ -104,10 +123,12 @@ boundary. Hooks are **session/user-level, not per-agent** — see
 | Hook | Event | Purpose |
 | --- | --- | --- |
 | `push-guard-hook.py` | `preToolUse` | The **enforcement** half of `git-push-guard`: inspects every shell `git push` and **denies** pushes to a protected branch at the tool layer. Fail-open on hook error so it can never brick a session. |
+| `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` | Enforces the shell trust boundary: denies secret-path reads for any agent, and denies workspace mutation while a read-only agent is active. Fail-open. |
+| `slop-guard-hook.py` | `preToolUse` | The **enforcement** half of `pr-comment-respond`: denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` on a real post. Covers GitHub, GitLab, and Bitbucket. Fail-open. |
 
-Install it opt-in with `python scripts/install_to_copilot.py --hooks`. Run the
-skill and the hook together (defense-in-depth) and back both with server-side
-branch protection.
+Install them opt-in with `python scripts/install_to_copilot.py --hooks`. Run the
+skills and the hooks together (defense-in-depth) and back the push rule with
+server-side branch protection.
 
 ---
 

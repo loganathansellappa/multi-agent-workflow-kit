@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.14.0] - 2026-10-10
+
+### Added
+- **New `pr-comment-respond` skill — close the PR review-comment loop in-session, in a human voice.** Adds
+  `skills/pr-comment-respond/SKILL.md` + `pr_comments.py` (stdlib + pyyaml CLI) with references and a
+  fictional example. Two paths:
+  - **Inbound:** reviewers commented on a PR you authored → list actionable comments, judge each against
+    the real code (OBSERVED, cited), delegate the fix to the owning component's `developerAgent` (or an
+    orchestrator for cross-component work) through its clean-gate loop, then reply + resolve behind a
+    confirmation gate. Never pushes a protected branch (runs `git-push-guard`).
+  - **Authoring:** review a PR/branch/diff, present findings first, then post inline/general comments only
+    after an explicit `ask_user` confirmation.
+  - **Humanize gate (enforced in code):** `reply`/`comment` sanitize AI punctuation tells then lint with
+    slophound; slop is rejected (exit 3) so nothing posts in AI voice.
+  - **Config-driven routing:** reuses the `services:` map (repoPath/baseBranch/developerAgent/reviewerAgent)
+    and a new `bitbucket:` (alias `codeReview:`) host block in `agents.config.example.yaml`. Nothing is
+    hard-coded; the Bitbucket Server/DC REST adapter is the reference, with GitHub/GitLab/Bitbucket-Cloud
+    documented in `references/other-hosts.md`.
+- **OVERVIEW/README updated** with the new skill, the skill count (11), and a PR-comment-loop flow diagram.
+- **New `slop-guard-hook.py` — tool-layer enforcement of the humanize gate.** A `preToolUse` hook that
+  denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/
+  `urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` on a real `reply`/`comment`.
+  Covers GitHub, GitLab, and Bitbucket; read-only comment GETs stay allowed. Deny-only + fail-open, stdlib
+  only. Registered in `hooks.example.json`, shipped by `install_to_copilot.py --hooks`, documented in
+  `hooks/README.md`, and covered by `tests/test_slop_guard.py`.
+
 ## [1.13.0] - 2026-09-30
 
 ### Added

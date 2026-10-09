@@ -39,7 +39,7 @@ Developers own the loop and call a read-only reviewer. Opening the PR stays with
 | `code-reviewer` | Staged/unstaged/branch diffs: confirmed bugs, regressions, design issues with `file:line` + fixes, plus a low-confidence list. |
 | `security-reviewer` | Auth / input-handling / crypto / untrusted-data changes: confirmed exploitable vulnerabilities with evidence. |
 
-## Skills (10) — reusable rules any agent can invoke
+## Skills (11) — reusable rules any agent can invoke
 
 **Guardrails / discipline**
 - `agent-preflight-check` — fast env/repo/tooling preflight **+ recall of past lessons** before work starts.
@@ -51,6 +51,7 @@ Developers own the loop and call a read-only reviewer. Opening the PR stays with
 **Review**
 - `review-findings-output` — findings contract: severity buckets + `file:line` evidence + a concrete fix.
 - `quality-loop-harness` — the build/verify/review/fix loop with explicit gates and a **loop cap**.
+- `pr-comment-respond` — close the loop on PR review comments two ways: **inbound** (reviewers commented on your PR → judge each against the real code → delegate the fix to the owning component's developer agent → reply + resolve behind a confirmation gate) and **authoring** (review a diff, then post comments after a confirmation gate). Every post passes a **humanize + slophound gate** so review feedback never goes out in AI voice. Config-driven routing; Bitbucket reference adapter (GitHub/GitLab/Cloud documented).
 
 **Learning / metrics**
 - `learning-capture` — capture durable, source-cited lessons to the KB (the *write* side of the loop).
@@ -68,7 +69,8 @@ coverage.
 
 - `push-guard-hook.py` — blocks a confirmed `git push` to a repo's protected base branch (config-driven, not just `main`), **and** softly refuses a push when the repo's recorded `workflow-state` gate is `FAIL` (no record or `PASS` = allowed).
 - `shell-guard-hook.py` — enforces the reviewer **read-only shell boundary** (blocks secret-file reads / workspace mutation even though reviewers still hold a shell).
-- `hooks.example.json` — registers both guards on the CLI's `preToolUse` + subagent lifecycle events.
+- `slop-guard-hook.py` — enforces the **PR-comment humanize gate**: denies a comment POST that bypasses the gated `pr_comments.py` (GitHub, GitLab, Bitbucket) and denies `--no-lint` on a real post.
+- `hooks.example.json` — registers all three guards on the CLI's `preToolUse` + subagent lifecycle events.
 
 ## Where things live
 

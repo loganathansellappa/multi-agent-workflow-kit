@@ -18,6 +18,7 @@ the CLI runs on its own, so it applies policy without the agent's cooperation
 | ---- | ------- |
 | `push-guard-hook.py` | `preToolUse` handler that **blocks `git push` to a protected branch** (main/master, plus any configured `baseBranch`) at the tool layer. This is the *enforcement* half of the `git-push-guard` skill. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** (fail-open defense-in-depth): (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
+| `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize gate** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` on `pr_comments.py reply`/`comment`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
 | `hooks.example.json` | The hook registration the CLI reads. Copy it to `~/.copilot/hooks/`. |
 
 ## Why the shell-guard hook exists
@@ -53,15 +54,30 @@ deliberately fail-open (a crash, unparseable input, or an uncovered path — e.g
 push from inside a script — allows the call). Run the skill and the hook together
 and back both with **server-side branch protection** for the hard guarantee.
 
+## Why the slop-guard hook exists
+
+The `pr-comment-respond` **skill** posts every reply/comment through
+`pr_comments.py`, which sanitizes the text and lints it with slophound before it
+reaches the host. That is only enforced if the agent uses the script. An agent can
+post a PR comment by calling the host REST API directly — `curl`, `gh api`,
+`glab api`, `Invoke-RestMethod`, or inline `urllib` — and never touch the gate, or
+pass `--no-lint` to switch it off. `slop-guard-hook.py` promotes the gate to
+*enforcement*: it inspects every shell call, denies a comment POST/PUT/PATCH that
+bypasses `pr_comments.py` on GitHub, GitLab, or Bitbucket, and denies `--no-lint`
+on a real post. Listing comments with a GET stays allowed, so reading feedback is
+never blocked. Like the other two, it is deny-only and fail-open: anything it
+cannot positively identify as a bypass is allowed.
+
 ## Install (user-level)
 
-Copy both files into your Copilot CLI hooks directory:
+Copy the files into your Copilot CLI hooks directory:
 
 ```powershell
 # Windows (PowerShell)
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.copilot\hooks" | Out-Null
 Copy-Item hooks\push-guard-hook.py "$env:USERPROFILE\.copilot\hooks\"
 Copy-Item hooks\shell-guard-hook.py "$env:USERPROFILE\.copilot\hooks\"
+Copy-Item hooks\slop-guard-hook.py "$env:USERPROFILE\.copilot\hooks\"
 Copy-Item hooks\hooks.example.json "$env:USERPROFILE\.copilot\hooks\kit-hooks.json"
 ```
 
@@ -70,6 +86,7 @@ Copy-Item hooks\hooks.example.json "$env:USERPROFILE\.copilot\hooks\kit-hooks.js
 mkdir -p ~/.copilot/hooks
 cp hooks/push-guard-hook.py ~/.copilot/hooks/
 cp hooks/shell-guard-hook.py ~/.copilot/hooks/
+cp hooks/slop-guard-hook.py ~/.copilot/hooks/
 cp hooks/hooks.example.json ~/.copilot/hooks/kit-hooks.json
 ```
 
@@ -151,6 +168,27 @@ Shell-guard:
 
 The full offline test suite lives in `tests/test_shell_guard.py`.
 
+Slop-guard:
+
+```powershell
+# A raw comment POST that bypasses the gated script is denied (any host):
+'{"toolName":"powershell","toolArgs":{"command":"gh api repos/o/r/pulls/7/comments -f body=hi"}}' `
+  | python hooks\slop-guard-hook.py
+# -> {"permissionDecision":"deny",...}
+
+# --no-lint on a real post is denied:
+'{"toolName":"powershell","toolArgs":{"command":"python pr_comments.py reply --slug s --pr 1 --comment 2 --text x --no-lint"}}' `
+  | python hooks\slop-guard-hook.py
+# -> {"permissionDecision":"deny",...}
+
+# Listing comments (GET) and the sanctioned script are allowed:
+'{"toolName":"powershell","toolArgs":{"command":"gh api repos/o/r/pulls/7/comments"}}' `
+  | python hooks\slop-guard-hook.py
+# -> {}
+```
+
+The full offline test suite lives in `tests/test_slop_guard.py`.
+
 > **Verifying subagent→session correlation live.** The correlation of
 > `subagentStart(sessionId)` → `preToolUse(sessionId)` cannot be observed offline
 > (hooks reload only on CLI start). After deploying, restart the CLI, run a
@@ -162,13 +200,13 @@ The full offline test suite lives in `tests/test_shell_guard.py`.
 ## Uninstall
 
 ```powershell
-Remove-Item "$env:USERPROFILE\.copilot\hooks\kit-hooks.json", "$env:USERPROFILE\.copilot\hooks\push-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\shell-guard-hook.py"
+Remove-Item "$env:USERPROFILE\.copilot\hooks\kit-hooks.json", "$env:USERPROFILE\.copilot\hooks\push-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\shell-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\slop-guard-hook.py"
 ```
 
 ## Other hooks worth considering (not shipped)
 
-We deliberately ship only the push-guard and shell-guard hooks. Keep hooks
-minimal, deterministic, and stdlib-only — every hook is a moving part on the
+We deliberately ship only the push-guard, shell-guard, and slop-guard hooks. Keep
+hooks minimal, deterministic, and stdlib-only — every hook is a moving part on the
 critical path of every tool call. Candidates you *could* add for your own setup:
 
 * `sessionStart` prompt hook to auto-run preflight (kept as a skill here so it

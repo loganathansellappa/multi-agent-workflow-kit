@@ -83,3 +83,25 @@ services:
 
 fallback:
   reviewerAgent: code-reviewer
+
+# ---------------------------------------------------------------------------
+# Code-review host (used by the pr-comment-respond skill). Maps each PR repo slug
+# to one of the services above, so comment routing reuses your developer/reviewer
+# map. `bitbucket` is the reference key (Bitbucket Server/DC REST); the alias
+# `codeReview` also works. For GitHub / GitLab / Bitbucket Cloud, see
+# skills/pr-comment-respond/references/other-hosts.md.
+# ---------------------------------------------------------------------------
+bitbucket:
+  baseUrl: <CODE_REVIEW_BASE_URL>            # e.g. https://code.example.com
+  tokenFile: <TOKEN_FILE>                    # one-line API token, kept out of VCS
+  insecureTls: false                         # true only for a self-signed dev host
+  repositories:
+    - slug: serviceA                          # the repo slug used in PR URLs
+      project: <PROJECT_KEY>                  # project/namespace key on the host
+      service: serviceA                       # -> services.serviceA above
+    - slug: serviceB
+      project: <PROJECT_KEY>
+      service: serviceB
+    - slug: serviceC
+      project: <PROJECT_KEY>
+      service: serviceC

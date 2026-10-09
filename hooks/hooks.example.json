@@ -18,6 +18,13 @@
         "bash": "python3 \"$HOME/.copilot/hooks/shell-guard-hook.py\" || exit 0",
         "powershell": "python \"$env:USERPROFILE\\.copilot\\hooks\\shell-guard-hook.py\"; exit 0",
         "timeoutSec": 10
+      },
+      {
+        "matcher": "bash|powershell|shell|execute",
+        "type": "command",
+        "bash": "python3 \"$HOME/.copilot/hooks/slop-guard-hook.py\" || exit 0",
+        "powershell": "python \"$env:USERPROFILE\\.copilot\\hooks\\slop-guard-hook.py\"; exit 0",
+        "timeoutSec": 10
       }
     ],
     "subagentStart": [
