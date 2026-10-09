@@ -8,6 +8,13 @@ Subcommands:
   resolve  - mark a comment thread RESOLVED
   humanize - sanitize + slophound-check text; prints cleaned text
 
+`reply`/`comment` run a deterministic validity preflight before posting: the body
+must be non-empty/non-placeholder, a `reply` target comment must exist and not be
+RESOLVED, and every file / file:line (and, with --strict, every commit SHA) cited
+in the text must resolve to THIS PR. It catches structural false positives; it does
+not (and cannot) certify that the reply is semantically correct. Opt out per-call
+with --no-ground.
+
 Self-configures from the kit config (code-review host base URL, token file, and a
 repo-slug -> service map that resolves each slug to its local repoPath, baseBranch,
 and owning developer/reviewer agent). Never searches the working directory.
@@ -26,6 +33,7 @@ import ssl
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -78,6 +86,159 @@ def finalize_text(text: str, no_lint: bool) -> str:
                 "Rewrite it plainer and more human, then retry:\n" + report + "\n")
             sys.exit(3)
     return text
+
+
+# --- grounding: every checkable reference in a post must resolve to THIS PR ------
+# A deterministic preflight. It cannot judge whether a reply is *correct* or
+# *responsive* (that is semantic and stays the agent's job), but it eliminates the
+# structurally-detectable false positives: replying to a missing/resolved comment,
+# an empty/placeholder body, or citing a file / line / commit that is not in the PR.
+_CODE_EXT = (
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".java", ".cpp", ".cc", ".cxx",
+    ".h", ".hpp", ".hh", ".cs", ".rb", ".rs", ".kt", ".kts", ".swift", ".m", ".mm",
+    ".php", ".scala", ".sql", ".sh", ".ps1", ".psm1", ".yaml", ".yml", ".json",
+    ".xml", ".gradle", ".toml", ".ini", ".cfg", ".md", ".proto", ".vue", ".css",
+    ".scss", ".html", ".tf", ".bicep", ".dockerfile",
+)
+_FILELINE_RE = re.compile(r"\b([\w./\-]+\.[A-Za-z0-9]+):(\d+)(?:-\d+)?\b")
+_PATH_RE = re.compile(r"\b([\w./\-]*[\w\-]+\.[A-Za-z0-9]+)\b")
+_SHA_RE = re.compile(r"\b([0-9a-fA-F]{7,40})\b")
+_PLACEHOLDER_RE = re.compile(r"^(?:\.{2,}|todo|tbd|wip|xxx|fixme|<[^>]*>|n/?a)$", re.I)
+
+
+def _looks_like_path(tok: str) -> bool:
+    ext = "." + tok.rsplit(".", 1)[-1].lower() if "." in tok else ""
+    return ("/" in tok and "." in tok.rsplit("/", 1)[-1]) or ext in _CODE_EXT
+
+
+def extract_refs(text: str):
+    """Return (file_tokens, (path,line) pairs, sha_tokens) cited in the text."""
+    files, filelines, shas = set(), [], set()
+    for m in _FILELINE_RE.finditer(text):
+        files.add(m.group(1))
+        filelines.append((m.group(1), int(m.group(2))))
+    for m in _PATH_RE.finditer(text):
+        tok = m.group(1).strip(".,);:'\"")
+        if _looks_like_path(tok):
+            files.add(tok)
+    for m in _SHA_RE.finditer(text):
+        shas.add(m.group(1).lower())
+    return files, filelines, shas
+
+
+def body_ok(text: str):
+    stripped = text.strip()
+    if not stripped:
+        return False, "empty body"
+    if _PLACEHOLDER_RE.match(stripped):
+        return False, f"placeholder body: {stripped!r}"
+    return True, ""
+
+
+def pr_changed_files(bb, proj, slug, pr):
+    out = set()
+    for v in bb.paged(f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}/changes"):
+        p = (v.get("path") or {}).get("toString")
+        if p:
+            out.add(p)
+    return out
+
+
+def pr_commit_shas(bb, proj, slug, pr):
+    vals = bb.paged(f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}/commits")
+    full = {v["id"].lower() for v in vals if v.get("id")}
+    short = {v["displayId"].lower() for v in vals if v.get("displayId")}
+    return full, short
+
+
+def _file_grounded(tok, changed):
+    tok = tok.lstrip("./")
+    if not tok:
+        return False
+    base = tok.rsplit("/", 1)[-1]
+    for cf in changed:
+        if cf == tok or cf.endswith("/" + tok):
+            return True
+        if "/" not in tok and cf.rsplit("/", 1)[-1] == base:
+            return True
+    return False
+
+
+def browse_exists(bb, proj, slug, path, at_ref):
+    q = "?type=true" + (f"&at={urllib.parse.quote(at_ref, safe='')}" if at_ref else "")
+    try:
+        bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{slug}/browse/{path.lstrip('./')}{q}")
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False
+        raise
+
+
+def reply_target_ok(bb, proj, slug, pr, comment_id):
+    try:
+        c = bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}/comments/{comment_id}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False, f"comment #{comment_id} does not exist on PR #{pr}"
+        return True, ""  # transient host error -> do not block a human
+    if (c.get("state") or "").upper() == "RESOLVED":
+        return False, f"comment #{comment_id} is already RESOLVED; do not reply to a closed thread"
+    return True, ""
+
+
+def ground_check(bb, proj, slug, pr, text, strict, extra_files=()):
+    """Return (ok, problems). A post with no checkable reference passes (nothing to
+    ground). Host/API errors fail open with a note (same discipline as slophound)."""
+    files, _filelines, shas = extract_refs(text)
+    files |= {f for f in extra_files if f}
+    if not files and not (strict and shas):
+        return True, []
+    try:
+        changed = pr_changed_files(bb, proj, slug, pr)
+        full_shas, short_shas = (pr_commit_shas(bb, proj, slug, pr) if strict and shas else (set(), set()))
+        head_ref = None
+        if not strict and any("/" in f for f in files):
+            info = bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}")
+            head_ref = (info.get("fromRef") or {}).get("latestCommit")
+    except urllib.error.HTTPError:
+        return True, ["(grounding skipped: could not fetch the PR diff/commits)"]
+    problems = []
+    for f in sorted(files):
+        if _file_grounded(f, changed):
+            continue
+        if not strict and "/" in f and browse_exists(bb, proj, slug, f, head_ref):
+            continue
+        problems.append(
+            f"file not in this PR: {f}" + ("" if strict else " (and not found at PR head)"))
+    if strict:
+        for sha in sorted(shas):
+            if not any(fs.startswith(sha) for fs in full_shas) and sha not in short_shas:
+                problems.append(f"commit not in this PR: {sha}")
+    return (not problems), problems
+
+
+def preflight(bb, proj, slug, pr, text, args, comment_id=None, extra_files=()):
+    """Deterministic validity gate shared by reply/comment. Exits non-zero on a
+    structurally-detectable false positive; stays silent on success."""
+    ok, why = body_ok(text)
+    if not ok:
+        sys.stderr.write(f"Rejected (body): {why}\n")
+        sys.exit(4)
+    if getattr(args, "no_ground", False):
+        return
+    if comment_id is not None:
+        ok, why = reply_target_ok(bb, proj, slug, pr, comment_id)
+        if not ok:
+            sys.stderr.write(f"Rejected (target): {why}\n")
+            sys.exit(4)
+    ok, problems = ground_check(bb, proj, slug, pr, text, getattr(args, "strict", False), extra_files)
+    if not ok:
+        sys.stderr.write(
+            "Rejected (grounding): the post cites things that are not in this PR:\n  - "
+            + "\n  - ".join(problems)
+            + "\nFix the references, or pass --no-ground if the citation is intentional.\n")
+        sys.exit(4)
 
 
 def load_config(path: Path) -> dict:
@@ -194,6 +355,7 @@ def cmd_list(bb, cfg, args):
 def cmd_reply(bb, cfg, args):
     proj, _ = project_for(cfg, args.slug)
     text = args.text if args.text is not None else sys.stdin.read()
+    preflight(bb, proj, args.slug, args.pr, text, args, comment_id=args.comment)
     text = finalize_text(text, args.no_lint)
     bb.req("POST", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}/comments",
            {"text": text, "parent": {"id": args.comment}})
@@ -203,6 +365,8 @@ def cmd_reply(bb, cfg, args):
 def cmd_comment(bb, cfg, args):
     proj, _ = project_for(cfg, args.slug)
     text = args.text if args.text is not None else sys.stdin.read()
+    preflight(bb, proj, args.slug, args.pr, text, args,
+              extra_files=(args.path,) if args.path else ())
     text = finalize_text(text, args.no_lint)
     body = {"text": text}
     if args.path:
@@ -250,6 +414,10 @@ def main():
     pr_.add_argument("--comment", type=int, required=True)
     pr_.add_argument("--text", help="reply text (or pass via stdin)")
     pr_.add_argument("--no-lint", action="store_true", help="skip humanize/slophound gate")
+    pr_.add_argument("--no-ground", action="store_true",
+                     help="skip the grounding/target validity preflight (intentional citations)")
+    pr_.add_argument("--strict", action="store_true",
+                     help="strict grounding: cited files AND commit SHAs must be in the PR diff")
 
     nc = sub.add_parser("comment", help="post a NEW review comment (general or inline)")
     nc.add_argument("--slug", required=True)
@@ -258,6 +426,10 @@ def main():
     nc.add_argument("--line", type=int, help="line number for an inline comment")
     nc.add_argument("--text", help="comment text (or pass via stdin)")
     nc.add_argument("--no-lint", action="store_true", help="skip humanize/slophound gate")
+    nc.add_argument("--no-ground", action="store_true",
+                    help="skip the grounding/target validity preflight (intentional citations)")
+    nc.add_argument("--strict", action="store_true",
+                    help="strict grounding: cited files AND commit SHAs must be in the PR diff")
 
     hm = sub.add_parser("humanize", help="sanitize + slophound-check text; prints cleaned text")
     hm.add_argument("--text", help="text to check (or pass via stdin)")

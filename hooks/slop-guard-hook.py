@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""preToolUse hook: enforce the PR-comment HUMANIZE gate at the tool layer (fail-open).
+"""preToolUse hook: enforce the PR-comment HUMANIZE + GROUNDING gates at the tool layer (fail-open).
 
 WHY THIS EXISTS
 ---------------
@@ -20,6 +20,9 @@ RULES (deny-only, fail-open)
      GETs that list comments are allowed.
   2. OPT-OUT: pr_comments.py reply/comment invoked with --no-lint is denied, so the
      humanize/slophound gate cannot be switched off for a real post.
+  2b. GROUNDING OPT-OUT: pr_comments.py reply/comment invoked with --no-ground is
+     denied, so the grounding/target validity preflight (target exists and is open,
+     every cited file/line/SHA is in this PR) cannot be switched off for a real post.
 
 FAIL BEHAVIOR
 -------------
@@ -59,6 +62,7 @@ POSTISH = re.compile(
 )
 SANCTIONED = re.compile(r"pr_comments\.py", re.I)
 NO_LINT = re.compile(r"(?i)pr_comments\.py\b[^\n]*\b(reply|comment)\b[^\n]*--no-lint")
+NO_GROUND = re.compile(r"(?i)pr_comments\.py\b[^\n]*\b(reply|comment)\b[^\n]*--no-ground")
 
 
 def _emit(decision):
@@ -131,6 +135,16 @@ def main():
             "slop-guard: --no-lint is not allowed on pr_comments.py reply/comment. "
             "PR comments must pass the humanize + slophound gate. Remove --no-lint; "
             "if slophound bites, rewrite the text plainer and more human, then retry."
+        )
+
+    # Rule 2b: never allow the grounding/target validity preflight to be switched off.
+    if NO_GROUND.search(cmd):
+        deny(
+            "slop-guard: --no-ground is not allowed on pr_comments.py reply/comment. "
+            "PR comments must pass the grounding preflight (target exists and is open, "
+            "and every cited file/line/SHA is in this PR). Fix the references instead "
+            "of bypassing the check; if a citation is genuinely intentional, a human "
+            "should post it."
         )
 
     # Rule 1: block a raw comment POST/PUT/PATCH that bypasses the gated script.

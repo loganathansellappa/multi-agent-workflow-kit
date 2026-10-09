@@ -29,9 +29,11 @@ python <skilldir>/pr_comments.py resolve  --slug <slug> --pr <id> --comment <cid
 python <skilldir>/pr_comments.py humanize --text "..."        # sanitize + slophound-check only
 ```
 
-`reply` and `comment` auto-run the humanize gate (below). Pass `--no-lint` only to
-override. Text can also be piped on stdin instead of `--text`. The slugs are the
-ones you list under the host block in your own config: nothing is hard-coded here.
+`reply` and `comment` auto-run the humanize gate AND a deterministic grounding
+preflight (below). Pass `--no-lint` / `--no-ground` only to override, and `--strict`
+for diff-mode grounding. Text can also be piped on stdin instead of `--text`. The
+slugs are the ones you list under the host block in your own config: nothing is
+hard-coded here.
 
 The reference adapter speaks Bitbucket Server / Data Center REST. For GitHub,
 GitLab, or Bitbucket Cloud, see `references/other-hosts.md`.
@@ -111,6 +113,19 @@ Use when the user asks you to review a PR/branch/diff and add your own comments.
   enforces this at the tool layer: it denies a raw-HTTP comment post that skips this
   helper and denies `--no-lint` on a real post, so the gate holds even without the
   agent's cooperation.
+- **Grounding / validity preflight (mandatory, enforced in code).** Before a reply or
+  comment posts, `pr_comments.py` also runs a deterministic preflight: (1) the body
+  must be non-empty and not a placeholder (`...`, `TODO`, `<fill>`, `n/a`, `FIXME`);
+  (2) for `reply`, the target comment must exist and must not be `RESOLVED`; (3) every
+  file / `file:line` the text cites must resolve to THIS PR (in the changed-file set,
+  or present at the PR head). With `--strict`, cited files AND commit SHAs must be in
+  the PR diff. A post that cites nothing passes (nothing to ground); a host/API error
+  fails open with a note. Rejections exit 4. `hooks/slop-guard-hook.py` denies
+  `--no-ground` on a real post, so the preflight cannot be switched off.
+  This catches the *structural* false positives (made-up file/line/SHA, wrong or
+  closed target, empty body). It does **not** certify that your reply is correct or
+  responsive: that is still your job. Ground every claim in the real diff and cite
+  `file:line` (OBSERVED), and do not assert a fix you did not make.
 - Write in a natural, human developer voice: concise, specific, respectful. No
   assistant phrasing (for example `I've carefully reviewed`, `it's worth noting`,
   `ensure robust`, `delve`), no restatement, no boilerplate, no emoji, no em-dashes.

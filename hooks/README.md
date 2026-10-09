@@ -18,7 +18,7 @@ the CLI runs on its own, so it applies policy without the agent's cooperation
 | ---- | ------- |
 | `push-guard-hook.py` | `preToolUse` handler that **blocks `git push` to a protected branch** (main/master, plus any configured `baseBranch`) at the tool layer. This is the *enforcement* half of the `git-push-guard` skill. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** (fail-open defense-in-depth): (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
-| `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize gate** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` on `pr_comments.py reply`/`comment`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
+| `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize + grounding gates** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` (humanize) and `--no-ground` (grounding/target preflight) on `pr_comments.py reply`/`comment`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
 | `hooks.example.json` | The hook registration the CLI reads. Copy it to `~/.copilot/hooks/`. |
 
 ## Why the shell-guard hook exists
@@ -64,7 +64,8 @@ post a PR comment by calling the host REST API directly — `curl`, `gh api`,
 pass `--no-lint` to switch it off. `slop-guard-hook.py` promotes the gate to
 *enforcement*: it inspects every shell call, denies a comment POST/PUT/PATCH that
 bypasses `pr_comments.py` on GitHub, GitLab, or Bitbucket, and denies `--no-lint`
-on a real post. Listing comments with a GET stays allowed, so reading feedback is
+(humanize) and `--no-ground` (the grounding/target validity preflight) on a real
+post. Listing comments with a GET stays allowed, so reading feedback is
 never blocked. Like the other two, it is deny-only and fail-open: anything it
 cannot positively identify as a bypass is allowed.
 
@@ -178,6 +179,11 @@ Slop-guard:
 
 # --no-lint on a real post is denied:
 '{"toolName":"powershell","toolArgs":{"command":"python pr_comments.py reply --slug s --pr 1 --comment 2 --text x --no-lint"}}' `
+  | python hooks\slop-guard-hook.py
+# -> {"permissionDecision":"deny",...}
+
+# --no-ground on a real post is denied too:
+'{"toolName":"powershell","toolArgs":{"command":"python pr_comments.py reply --slug s --pr 1 --comment 2 --text x --no-ground"}}' `
   | python hooks\slop-guard-hook.py
 # -> {"permissionDecision":"deny",...}
 

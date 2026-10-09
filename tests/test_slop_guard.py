@@ -4,6 +4,7 @@
 The slop-guard hook enforces the PR-comment humanize gate at the tool layer:
   1. a raw-HTTP comment POST that bypasses pr_comments.py is denied (any host);
   2. pr_comments.py reply/comment with --no-lint is denied;
+  2b. pr_comments.py reply/comment with --no-ground is denied;
   3. listing comments (GET) and routing through pr_comments.py are allowed.
 
 No network; the hook never runs the command. It must always exit 0 and express
@@ -72,6 +73,16 @@ class NoLintDenied(unittest.TestCase):
 
     def test_comment_no_lint_denied(self):
         cmd = 'python pr_comments.py comment --slug s --pr 1 --text "x" --no-lint'
+        self.assertTrue(denied(run_hook(cmd)))
+
+
+class NoGroundDenied(unittest.TestCase):
+    def test_reply_no_ground_denied(self):
+        cmd = 'python pr_comments.py reply --slug s --pr 1 --comment 2 --text "x" --no-ground'
+        self.assertTrue(denied(run_hook(cmd)))
+
+    def test_comment_no_ground_denied(self):
+        cmd = 'python pr_comments.py comment --slug s --pr 1 --text "x" --no-ground'
         self.assertTrue(denied(run_hook(cmd)))
 
 

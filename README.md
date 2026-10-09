@@ -124,7 +124,7 @@ boundary. Hooks are **session/user-level, not per-agent** — see
 | --- | --- | --- |
 | `push-guard-hook.py` | `preToolUse` | The **enforcement** half of `git-push-guard`: inspects every shell `git push` and **denies** pushes to a protected branch at the tool layer. Fail-open on hook error so it can never brick a session. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` | Enforces the shell trust boundary: denies secret-path reads for any agent, and denies workspace mutation while a read-only agent is active. Fail-open. |
-| `slop-guard-hook.py` | `preToolUse` | The **enforcement** half of `pr-comment-respond`: denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` on a real post. Covers GitHub, GitLab, and Bitbucket. Fail-open. |
+| `slop-guard-hook.py` | `preToolUse` | The **enforcement** half of `pr-comment-respond`: denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` (humanize) and `--no-ground` (grounding/target preflight) on a real post. Covers GitHub, GitLab, and Bitbucket. Fail-open. |
 
 Install them opt-in with `python scripts/install_to_copilot.py --hooks`. Run the
 skills and the hooks together (defense-in-depth) and back the push rule with
