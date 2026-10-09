@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.15.0] - 2026-10-10
+
+### Added
+- **Deterministic grounding/validity preflight for `pr-comment-respond`.** `pr_comments.py` `reply`/`comment`
+  now run a stdlib preflight before anything posts, so a structurally-detectable false positive never
+  reaches the host:
+  - **Target check (reply):** the parent comment must exist and must not be `RESOLVED` (no replying to a
+    missing or closed thread).
+  - **Body check:** empty and placeholder bodies (`...`, `TODO`, `<fill>`, `n/a`, `FIXME`) are rejected.
+  - **Grounding check:** every file / `file:line` the reply cites must resolve to THIS PR: it must be in
+    the PR's changed-file set, or (existence mode, the default) present at the PR head. With `--strict`,
+    cited files AND commit SHAs must be in the PR diff. A post that cites nothing passes (nothing to
+    ground). A host/API error fails open with a note (same discipline as the slophound skip). Exit 4 on
+    rejection.
+  - Honest boundary: this catches made-up references and wrong/closed targets. It does **not** certify that
+    a reply is semantically correct or responsive. That stays the agent's job, backed by the SKILL.md
+    grounding rule.
+  - New flags `--no-ground` (opt out) and `--strict`; `tests/test_pr_grounding.py` (18 offline tests).
+- **`slop-guard-hook.py` now also enforces the grounding gate.** Added rule 2b: `pr_comments.py`
+  `reply`/`comment` invoked with `--no-ground` is denied at the tool layer, so the preflight cannot be
+  switched off for a real post. `tests/test_slop_guard.py` extended (+2).
+
 ## [1.14.0] - 2026-10-10
 
 ### Added

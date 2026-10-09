@@ -69,7 +69,7 @@ coverage.
 
 - `push-guard-hook.py` — blocks a confirmed `git push` to a repo's protected base branch (config-driven, not just `main`), **and** softly refuses a push when the repo's recorded `workflow-state` gate is `FAIL` (no record or `PASS` = allowed).
 - `shell-guard-hook.py` — enforces the reviewer **read-only shell boundary** (blocks secret-file reads / workspace mutation even though reviewers still hold a shell).
-- `slop-guard-hook.py` — enforces the **PR-comment humanize gate**: denies a comment POST that bypasses the gated `pr_comments.py` (GitHub, GitLab, Bitbucket) and denies `--no-lint` on a real post.
+- `slop-guard-hook.py` — enforces the **PR-comment humanize + grounding gates**: denies a comment POST that bypasses the gated `pr_comments.py` (GitHub, GitLab, Bitbucket) and denies `--no-lint` (humanize) and `--no-ground` (grounding/target preflight) on a real post.
 - `hooks.example.json` — registers all three guards on the CLI's `preToolUse` + subagent lifecycle events.
 
 ## Where things live
