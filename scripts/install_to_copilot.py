@@ -118,8 +118,8 @@ def main(argv=None):
         "--hooks",
         action="store_true",
         help="Also install the guard preToolUse hooks into ~/.copilot/hooks "
-             "(push-guard-hook.py + shell-guard-hook.py + kit-hooks.json). "
-             "See hooks/README.md.",
+             "(push-guard-hook.py + shell-guard-hook.py + slop-guard-hook.py + "
+             "kit-hooks.json). See hooks/README.md.",
     )
     ap.add_argument("--no-backup", action="store_true",
                     help="Skip the rotating backup of the current live agents+skills.")
@@ -175,7 +175,7 @@ def main(argv=None):
         dest_hooks = dest_copilot / "hooks"
         dest_hooks.mkdir(parents=True, exist_ok=True)
         hook_config = src_hooks / "hooks.example.json"
-        hook_scripts = ["push-guard-hook.py", "shell-guard-hook.py"]
+        hook_scripts = ["push-guard-hook.py", "shell-guard-hook.py", "slop-guard-hook.py"]
         present = [s for s in hook_scripts if (src_hooks / s).is_file()]
         if present and hook_config.is_file():
             for s in present:

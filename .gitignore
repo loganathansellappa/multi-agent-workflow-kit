@@ -17,3 +17,7 @@ scripts/company-terms.txt
 
 # Shell-guard runtime markers (per-session, local-only)
 hooks/.readonly-sessions/
+
+# Session handoff note (local-only, never commit)
+CONTEXT.md
+
