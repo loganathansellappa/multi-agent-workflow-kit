@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Multi-Agent Workflow Kit — the feature-orchestrator loop</title>
+<style>
+  :root { --bg:#0b1020; --panel:#141b33; --panel2:#10173a; --line:#2a3560; --txt:#e8ecff; --mute:#8d97c4; --acc:#4fd1ff; --ok:#3ddc97; --warn:#ffb547; --bad:#ff5d73; --vio:#b388ff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { width:1920px; height:1080px; overflow:hidden; background:var(--bg); color:var(--txt); font-family:"Segoe UI",system-ui,sans-serif; }
+  #stage { position:relative; width:1920px; height:1080px; background:radial-gradient(1200px 700px at 82% 8%, #1a2350 0%, transparent 60%), radial-gradient(900px 600px at 8% 92%, #1a1440 0%, transparent 60%), var(--bg); }
+  .scene { position:absolute; inset:0 0 120px 0; padding:70px 120px; opacity:0; transform:translateY(20px); transition:opacity .5s, transform .5s; }
+  .scene.on { opacity:1; transform:none; }
+  .scene.center { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  [data-at] { opacity:0; transform:translateY(14px); transition:opacity .45s, transform .45s; }
+  [data-at].show { opacity:1; transform:none; }
+  h1 { font-size:116px; font-weight:800; letter-spacing:-3px; }
+  h2 { font-size:60px; font-weight:700; margin-bottom:30px; letter-spacing:-1px; }
+  .acc{color:var(--acc)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)} .vio{color:var(--vio)} .mute{color:var(--mute)}
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:34px 44px; box-shadow:0 20px 60px #0008; }
+  #caption { position:absolute; left:0; right:0; bottom:0; height:120px; display:flex; align-items:center; justify-content:center; font-size:35px; background:linear-gradient(transparent, #000a 42%); color:#fff; padding:0 150px; text-align:center; }
+  #progress { position:absolute; left:0; bottom:0; height:6px; background:var(--acc); width:0; z-index:5; }
+  #phase { position:absolute; top:40px; right:60px; font-family:Consolas,monospace; font-size:26px; color:var(--mute); letter-spacing:2px; }
+  .term { font-family:"Cascadia Code",Consolas,monospace; font-size:40px; line-height:1.5; }
+  .cursor { display:inline-block; width:18px; height:40px; background:var(--acc); vertical-align:middle; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50%{opacity:0} }
+  .pill { display:inline-block; padding:11px 24px; border:1px solid var(--line); border-radius:999px; font-size:28px; color:var(--mute); margin:7px; background:#10173099; }
+  .skills { position:absolute; left:120px; right:120px; bottom:26px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .skills .lbl { font-size:24px; color:var(--mute); margin-right:6px; letter-spacing:2px; }
+  .sk { font-family:Consolas,monospace; font-size:25px; padding:8px 18px; border-radius:10px; background:#15205a; border:1px solid #30408a; color:#cfe0ff; }
+  .sk.hook { background:#3a1030; border-color:#7a2a55; color:#ffd0e4; }
+  .row2 { display:flex; gap:40px; align-items:stretch; }
+  .chk { font-size:34px; line-height:1.75; }
+  .state { font-family:Consolas,monospace; font-size:27px; padding:8px 18px; border-radius:10px; background:var(--panel2); border:1px solid var(--line); }
+  table.route { width:100%; border-collapse:separate; border-spacing:0 14px; font-size:32px; }
+  table.route td { padding:18px 24px; background:var(--panel); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  table.route td:first-child { border-left:1px solid var(--line); border-radius:14px 0 0 14px; color:var(--mute); }
+  table.route td:last-child { border-right:1px solid var(--line); border-radius:0 14px 14px 0; font-family:Consolas,monospace; }
+  table.route td.arrow { background:transparent; border:none; color:var(--acc); width:70px; text-align:center; font-size:34px; }
+  .agent { color:var(--acc); font-weight:600; }
+  .rev { color:var(--vio); font-weight:600; }
+  .loop { display:flex; align-items:center; gap:30px; font-size:34px; }
+  .loop .node { background:var(--panel); border:2px solid var(--line); border-radius:16px; padding:22px 30px; }
+  .loop .node.green { border-color:var(--ok); color:var(--ok); box-shadow:0 0 30px #3ddc9755; }
+  .loop .a { color:var(--acc); font-size:40px; }
+  .hookwrap { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; }
+  .hookcard { border-radius:26px; padding:46px 70px; text-align:center; border:3px solid var(--bad); background:#241026; box-shadow:0 0 0 0 #ff5d7355; }
+  .scene.on .hookcard { animation:hookpulse 1.8s ease-out infinite; }
+  @keyframes hookpulse { 0%{box-shadow:0 0 0 0 #ff5d7366} 70%{box-shadow:0 0 0 46px #ff5d7300} 100%{box-shadow:0 0 0 0 #ff5d7300} }
+  .hookcard.guard { border-color:var(--ok); background:#102a20; }
+  .scene.on .hookcard.guard { animation:okpulse 1.8s ease-out infinite; }
+  @keyframes okpulse { 0%{box-shadow:0 0 0 0 #3ddc9766} 70%{box-shadow:0 0 0 46px #3ddc9700} 100%{box-shadow:0 0 0 0 #3ddc9700} }
+  .hooktag { font-family:Consolas,monospace; font-size:34px; letter-spacing:3px; color:var(--mute); }
+  .hookname { font-size:78px; font-weight:800; margin:8px 0 26px; }
+  .rule { font-size:36px; line-height:1.9; text-align:left; display:inline-block; }
+  .sev { display:inline-block; min-width:58px; text-align:center; font-family:Consolas,monospace; font-size:30px; padding:6px 12px; border-radius:10px; margin-right:12px; }
+  .sev.c{background:#3a0f1a;color:#ff7a8c;border:1px solid #7a2436}
+  .sev.h{background:#3a240f;color:#ffb547;border:1px solid #7a5324}
+  .sev.m{background:#2a2a0f;color:#e8e06a;border:1px solid #6a6a24}
+  .round { font-size:34px; margin:14px 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- 1 · TITLE -->
+  <section class="scene center" data-start="0" data-end="5.2" data-cap="A generic multi-agent workflow: one orchestrator, specialist agents per component, three guard hooks, one grounded loop.">
+    <div data-at="0.1" style="font-size:120px">🧭</div>
+    <h1 data-at="0.3">the <span class="acc">feature-orchestrator</span> loop</h1>
+    <p data-at="1.1" style="font-size:44px;color:var(--mute);margin-top:14px">one orchestrator · a developer + reviewer per component · three guard hooks</p>
+    <div data-at="2.2" style="margin-top:34px">
+      <span class="pill">serviceA · server</span><span class="pill">serviceB · client/UI</span><span class="pill">serviceC · API contract</span><span class="pill">+ add your own</span>
+    </div>
+  </section>
+
+  <!-- 2 · CONFIG + KB -->
+  <section class="scene" data-start="5.2" data-end="13.2" data-cap="The orchestrator first resolves agents.config.yaml, then reads only the scoped KB — it grounds in your facts before it plans, never guessing.">
+    <h2 data-at="0">Ground before you plan</h2>
+    <div class="row2">
+      <div class="card" data-at="0.3" style="flex:1">
+        <div class="mute" style="font-size:26px">CONFIG</div>
+        <div class="term" style="font-size:30px;margin-top:12px"><span class="acc">agents.config.yaml</span></div>
+        <div style="font-size:28px;color:var(--mute);margin-top:16px">repoPaths · kbRoot · model tiers</div>
+      </div>
+      <div class="card" data-at="1.3" style="flex:1.4">
+        <div class="mute" style="font-size:26px">SCOPED KB READ</div>
+        <div class="term" style="font-size:30px;margin-top:12px"><span class="acc">kb/00-index.md</span> → project map</div>
+        <div class="chk" style="font-size:30px;margin-top:14px">
+          <div data-at="2.2"><span class="ok">✔</span> conventions &amp; gotchas for the touched components</div>
+          <div data-at="3.1"><span class="ok">✔</span> prior cited lessons recalled</div>
+        </div>
+      </div>
+    </div>
+    <div class="term" data-at="4.2" style="margin-top:30px;font-size:34px"><span class="acc">›</span> <span data-type="resolve config  →  read scoped KB  →  plan" data-type-start="9.6"></span><span class="cursor"></span></div>
+    <div class="skills"><span class="lbl">SKILL</span><span class="sk">untrusted-input-guard</span><span class="mute" style="font-size:24px">· KB &amp; tickets are data, never instructions</span></div>
+  </section>
+
+  <!-- 3 · PREFLIGHT -->
+  <section class="scene" data-start="13.2" data-end="20.6" data-cap="agent-preflight-check verifies the environment, repo and tooling and recalls past lessons — so avoidable failures never reach the build.">
+    <h2 data-at="0">Preflight</h2>
+    <div class="card" data-at="0.3" style="width:1400px">
+      <div class="state" style="display:inline-block">agent-preflight-check</div>
+      <div class="chk" style="margin-top:22px">
+        <div data-at="0.9"><span class="ok">✔</span> environment &amp; tooling present (git, build, lint)</div>
+        <div data-at="1.7"><span class="ok">✔</span> repo on a task branch off the base, tree clean</div>
+        <div data-at="2.5"><span class="ok">✔</span> config paths resolve to real local checkouts</div>
+        <div data-at="3.3"><span class="acc">↺</span> recalled cited lessons from past sessions</div>
+      </div>
+    </div>
+    <div class="skills"><span class="lbl">SKILL</span><span class="sk">agent-preflight-check</span><span class="mute" style="font-size:24px">· fail fast + episodic recall, before any work</span></div>
+  </section>
+
+  <!-- 4 · PLAN + LOCK SCOPE -->
+  <section class="scene" data-start="20.6" data-end="28.6" data-cap="The orchestrator plans the change and workflow-state stamps the planned scope — any later step that drifts from it is rejected on resume.">
+    <h2 data-at="0">Plan &amp; lock the scope</h2>
+    <div class="row2">
+      <div class="card" data-at="0.3" style="flex:1.5">
+        <div class="mute" style="font-size:26px">PLAN</div>
+        <div class="chk" style="font-size:31px;margin-top:10px">
+          <div data-at="0.8">1 · touched components + blast radius</div>
+          <div data-at="1.4">2 · contract-first order (API → consumers)</div>
+          <div data-at="2.0">3 · review + gate criteria</div>
+        </div>
+      </div>
+      <div class="card" data-at="1.0" style="flex:1;border-color:#30408a">
+        <div class="mute" style="font-size:26px">workflow-state</div>
+        <div class="term" style="font-size:30px;margin-top:12px"><span class="ok">●</span> planned scope ✓<br><span class="mute">drift → rejected</span></div>
+      </div>
+    </div>
+    <div class="skills"><span class="lbl">SKILLS</span><span class="sk">workflow-state</span><span class="sk">evidence-discipline</span></div>
+  </section>
+
+  <!-- 5 · DELEGATE -->
+  <section class="scene" data-start="28.6" data-end="38.2" data-cap="Each component is routed to its specialist developer agent on the right model tier — the orchestrator coordinates and never edits across components itself.">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h2 style="margin:0">Route each component to its specialist</h2>
+      <span class="state">DELEGATE</span>
+    </div>
+    <table class="route">
+      <tr data-at="0.4"><td>serviceA · server-side</td><td class="arrow">→</td><td><span class="agent">backend-developer</span></td></tr>
+      <tr data-at="1.1"><td>serviceB · client / UI</td><td class="arrow">→</td><td><span class="agent">frontend-developer</span></td></tr>
+      <tr data-at="1.8"><td>serviceC · API contract</td><td class="arrow">→</td><td><span class="agent">api-developer</span></td></tr>
+      <tr data-at="2.5"><td>+ add your own</td><td class="arrow">→</td><td><span class="agent">your-component-developer</span></td></tr>
+    </table>
+  </section>
+
+  <!-- 6 · BUILD + TEST -->
+  <section class="scene center" data-start="38.2" data-end="46.2" data-cap="Each developer builds and tests in its own repo; quality-loop-harness drives build → verify → fix, with a loop cap, until the component is green.">
+    <h2 data-at="0">Build &amp; test in-repo</h2>
+    <div class="loop" style="margin-top:10px">
+      <div class="node" data-at="0.4">build</div>
+      <div class="a" data-at="0.7">→</div>
+      <div class="node" data-at="1.0">verify / lint / test</div>
+      <div class="a" data-at="1.3">→</div>
+      <div class="node" data-at="1.6">fix</div>
+      <div class="a" data-at="1.9">↻</div>
+      <div class="node green" data-at="2.6">green ✓</div>
+    </div>
+    <div class="skills"><span class="lbl">SKILL</span><span class="sk">quality-loop-harness</span><span class="mute" style="font-size:24px">· deterministic build/verify/fix gate + loop cap</span></div>
+  </section>
+
+  <!-- 7 · HOOK shell-guard -->
+  <section class="scene" data-start="46.2" data-end="54.6" data-cap="HOOK · shell-guard runs before every reviewer command: reviewers are read-only, so it blocks writes and denies secret-file reads before they execute.">
+    <div class="hookwrap">
+      <div class="hookcard" data-at="0.2">
+        <div class="hooktag">HOOK · fires before each shell command</div>
+        <div class="hookname bad">shell-guard</div>
+        <div class="rule">
+          <div data-at="0.9"><span class="bad">✘</span> write / edit blocked for reviewer agents</div>
+          <div data-at="1.6"><span class="bad">✘</span> read of secret files (.env, keys) denied</div>
+          <div data-at="2.3"><span class="ok">✔</span> read-only inspection allowed</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · REVIEW -->
+  <section class="scene" data-start="54.6" data-end="63.2" data-cap="Reviewer agents return findings bucketed by severity with file:line evidence and a concrete fix — never fabricated. review-orchestrator routes a diff to the right reviewers.">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h2 style="margin:0">Specialist review</h2>
+      <span class="state">REVIEW</span>
+    </div>
+    <table class="route">
+      <tr data-at="0.4"><td>correctness &amp; logic</td><td class="arrow">→</td><td><span class="rev">code-reviewer</span></td></tr>
+      <tr data-at="1.1"><td>vulnerabilities</td><td class="arrow">→</td><td><span class="rev">security-reviewer</span></td></tr>
+      <tr data-at="1.8"><td>route an existing diff</td><td class="arrow">→</td><td><span class="rev">review-orchestrator</span></td></tr>
+    </table>
+    <div style="margin-top:14px;font-size:30px"><span class="sev c">CRIT</span><span class="sev h">HIGH</span><span class="sev m">MED</span><span class="mute">· each with file:line evidence &amp; a concrete fix</span></div>
+    <div class="skills"><span class="lbl">SKILL</span><span class="sk">review-findings-output</span></div>
+  </section>
+
+  <!-- 9 · ADDRESS + LOOP -->
+  <section class="scene" data-start="63.2" data-end="72.6" data-cap="ADDRESS → re-REVIEW loops until zero Critical, High and Medium remain. That gate is the definition of done.">
+    <h2 data-at="0">Address → re-review → loop</h2>
+    <div class="card" style="width:1500px">
+      <div class="round" data-at="0.5">round 1 &nbsp; <span class="sev c">1</span><span class="sev h">2</span><span class="sev m">1</span> <span class="mute">→ developers fix</span></div>
+      <div class="round" data-at="1.6">round 2 &nbsp; <span class="sev c">0</span><span class="sev h">0</span><span class="sev m">1</span> <span class="mute">→ one more pass</span></div>
+      <div class="round" data-at="2.8">round 3 &nbsp; <span class="sev c">0</span><span class="sev h">0</span><span class="sev m">0</span> <span class="ok">✔ gate clear</span></div>
+    </div>
+    <div data-at="3.8" style="font-size:40px;margin-top:26px">Done = <span class="ok">0 Critical / 0 High / 0 Medium</span></div>
+  </section>
+
+  <!-- 10 · HOOK slop-guard -->
+  <section class="scene" data-start="72.6" data-end="81.2" data-cap="HOOK · slop-guard fires before any PR comment posts: humanize and grounding gates must pass, so replies cite evidence instead of shipping AI slop.">
+    <div class="hookwrap">
+      <div class="hookcard" data-at="0.2">
+        <div class="hooktag">HOOK · fires before posting a PR comment</div>
+        <div class="hookname warn">slop-guard</div>
+        <div class="rule">
+          <div data-at="0.9"><span class="ok">✔</span> humanize gate — no templated AI slop</div>
+          <div data-at="1.6"><span class="ok">✔</span> grounding gate — each claim tied to the diff</div>
+          <div data-at="2.3"><span class="bad">✘</span> bypassing the gated poster is denied</div>
+        </div>
+      </div>
+    </div>
+    <div class="skills"><span class="lbl">SKILL</span><span class="sk">pr-comment-respond</span><span class="mute" style="font-size:24px">· reply + resolve review threads, grounded</span></div>
+  </section>
+
+  <!-- 11 · LEARN + RECORD -->
+  <section class="scene" data-start="81.2" data-end="89.6" data-cap="learning-capture writes one cited lesson back to the KB; workflow-state stamps the gate status and review commit; delivery metrics are logged.">
+    <h2 data-at="0">Learn &amp; record</h2>
+    <div class="row2">
+      <div class="card" data-at="0.4" style="flex:1"><div class="mute" style="font-size:25px">learning-capture</div><div style="font-size:30px;margin-top:10px">1 cited lesson → <span class="acc">KB</span></div><div class="mute" style="font-size:25px;margin-top:8px">kb-curate verifies later</div></div>
+      <div class="card" data-at="1.1" style="flex:1"><div class="mute" style="font-size:25px">workflow-state</div><div style="font-size:30px;margin-top:10px"><span class="ok">●</span> gate = PASS<br>review commit stamped</div></div>
+      <div class="card" data-at="1.8" style="flex:1"><div class="mute" style="font-size:25px">delivery-metrics-capture</div><div style="font-size:30px;margin-top:10px">tier · loops · tokens · outcome</div></div>
+    </div>
+    <div class="skills"><span class="lbl">SKILLS</span><span class="sk">learning-capture</span><span class="sk">kb-curate</span><span class="sk">workflow-state</span><span class="sk">delivery-metrics-capture</span></div>
+  </section>
+
+  <!-- 12 · HOOK push-guard -->
+  <section class="scene" data-start="89.6" data-end="98.2" data-cap="HOOK · push-guard runs before every push: commits stay local, pushes to the protected base branch are blocked, and no push proceeds while the gate is FAIL.">
+    <div class="hookwrap">
+      <div class="hookcard guard" data-at="0.2">
+        <div class="hooktag">HOOK · fires before every git push</div>
+        <div class="hookname ok">push-guard</div>
+        <div class="rule">
+          <div data-at="0.9"><span class="ok">✔</span> commit locally — always allowed</div>
+          <div data-at="1.6"><span class="bad">✘</span> push to the protected base (main/master) blocked</div>
+          <div data-at="2.3"><span class="bad">✘</span> push blocked while workflow-state gate = FAIL</div>
+          <div data-at="3.0"><span class="ok">✔</span> push the task branch once the gate is PASS</div>
+        </div>
+      </div>
+    </div>
+    <div class="skills"><span class="lbl">SKILL</span><span class="sk hook">git-push-guard</span></div>
+  </section>
+
+  <!-- 13 · OUTRO -->
+  <section class="scene center" data-start="98.2" data-end="104" data-cap="Grounded in the KB, gated by reviewers and hooks, self-improving through capture — the whole loop, every run. Copy it, adapt it to your stack.">
+    <div data-at="0.1" style="font-size:96px">🔁</div>
+    <h1 data-at="0.4" style="font-size:88px">grounded · gated · self-improving</h1>
+    <p data-at="1.4" style="font-size:38px;color:var(--mute);margin-top:18px">KB read → preflight → plan → delegate → build+test → review → loop → learn → commit → push</p>
+    <div data-at="2.4" style="margin-top:28px"><span class="pill">shell-guard</span><span class="pill">slop-guard</span><span class="pill">push-guard</span></div>
+  </section>
+
+  <div id="caption"></div>
+  <div id="progress"></div>
+  <div id="phase"></div>
+</div>
+
+<script>
+(() => {
+  const TOTAL = 104;
+  const scenes = [...document.querySelectorAll('.scene')];
+  const cap = document.getElementById('caption');
+  const prog = document.getElementById('progress');
+  const phase = document.getElementById('phase');
+  const typers = [...document.querySelectorAll('[data-type]')];
+  let t0 = null;
+
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    prog.style.width = Math.min(100, t / TOTAL * 100) + '%';
+    let capText = '', idx = 0, i = 0;
+    for (const s of scenes) {
+      const a = +s.dataset.start, b = +s.dataset.end, on = t >= a && t < b, lt = t - a;
+      s.classList.toggle('on', on);
+      if (on) { capText = s.dataset.cap; idx = i; }
+      s.querySelectorAll('[data-at]').forEach(e => e.classList.toggle('show', on && lt >= +e.dataset.at));
+      i++;
+    }
+    if (cap.textContent !== capText) cap.textContent = capText;
+    const ph = 'STEP ' + String(idx + 1).padStart(2, '0') + ' / ' + scenes.length;
+    if (phase.textContent !== ph) phase.textContent = ph;
+
+    for (const el of typers) {
+      const start = +el.dataset.typeStart, full = el.dataset.type;
+      const n = Math.max(0, Math.min(full.length, Math.floor((t - start) * 26)));
+      const s = full.slice(0, n);
+      if (el.textContent !== s) el.textContent = s;
+    }
+
+    if (t < TOTAL) requestAnimationFrame(frame); else window.__done = true;
+  }
+
+  window.__start = () => { t0 = performance.now(); requestAnimationFrame(frame); };
+  const imgs = [...document.images];
+  Promise.all(imgs.map(i => i.complete ? 1 : new Promise(r => { i.onload = i.onerror = r; }))).then(() => {
+    window.__ready = true;
+    if (!location.search.includes('record')) window.__start();
+  });
+})();
+</script>
+</body>
+</html>
