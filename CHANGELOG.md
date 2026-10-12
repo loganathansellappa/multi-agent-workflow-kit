@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format is based on
   `slop-guard`, `push-guard`) and each skill fires. Uses the kit's generic placeholder names
   (`feature-orchestrator`, `backend-developer`, `serviceA/B/C`, …). `docs/flow/README.md` documents how to
   watch and how to re-render the MP4 from the HTML (a minimal Playwright + ffmpeg recorder is included).
+- **Demo surfaced in the README.** Added a "See it in action" section near the top of `README.md` with a
+  clickable poster (`docs/flow/poster.png`) linking to the walkthrough, so visitors can watch the loop
+  immediately.
 
 ## [1.15.0] - 2026-10-10
 

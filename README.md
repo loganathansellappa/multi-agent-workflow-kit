@@ -20,6 +20,18 @@ your own stack in minutes — with cost governance and a quality loop built in.
 
 ---
 
+## See it in action
+
+<a href="docs/flow/flow.mp4"><img src="docs/flow/poster.png" alt="Watch the animated walkthrough of the multi-agent loop" width="100%"></a>
+
+**▶ [Watch the 1080p walkthrough (`flow.mp4`, ~1:45)](docs/flow/flow.mp4)** — the full loop end to end:
+KB grounding → preflight → plan → delegate to specialist agents → build+test → review → address/loop →
+learn → commit → push, with every guard hook (`shell-guard`, `slop-guard`, `push-guard`) and skill
+annotated and captioned. Prefer HTML? Open [`docs/flow/flow.html`](docs/flow/flow.html) — it plays in any
+browser. Details in [`docs/flow/`](docs/flow/).
+
+---
+
 ## The idea in one picture
 
 ```
