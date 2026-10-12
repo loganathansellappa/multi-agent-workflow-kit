@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.16.0] - 2026-10-12
+
+### Added
+- **Animated end-to-end flow walkthrough (`docs/flow/`).** A self-contained animated `flow.html` plus a
+  rendered 1080p `flow.mp4` (≈1:45) depicting the full workflow — KB grounding → preflight → plan → delegate
+  to specialist developer agents → build+test → review → address/loop until the gate clears → learn/record →
+  commit → push — with on-screen captions explaining *why* each of the three guard hooks (`shell-guard`,
+  `slop-guard`, `push-guard`) and each skill fires. Uses the kit's generic placeholder names
+  (`feature-orchestrator`, `backend-developer`, `serviceA/B/C`, …). `docs/flow/README.md` documents how to
+  watch and how to re-render the MP4 from the HTML (a minimal Playwright + ffmpeg recorder is included).
+
 ## [1.15.0] - 2026-10-10
 
 ### Added
