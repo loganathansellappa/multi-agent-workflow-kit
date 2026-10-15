@@ -6,11 +6,14 @@ skills — which an agent *chooses* to invoke — a hook is a runtime intercepto
 the CLI runs on its own, so it applies policy without the agent's cooperation
 (defense-in-depth, deliberately fail-open — see failure behavior below).
 
-> **Hooks are session/user/repo-level, not per-agent.** You cannot put a hook
-> "inside" an agent `.md`. Agents declare *skills and tools*; hooks intercept
-> *every* tool call in the session regardless of which agent is running. To scope
-> behavior by agent, use the `subagentStart`/`subagentStop` events with a
-> `matcher`; to scope by tool, use the `matcher` on `preToolUse`/`postToolUse`.
+> **Global hooks are session/user/repo-level; agents can add their own.** Hooks in
+> `hooks.example.json` intercept *every* tool call in the session regardless of which
+> agent is running. An agent `.md` can also declare hooks in its frontmatter
+> (`hooks:` with `userPromptSubmitted` / `preToolUse` entries using `command:`).
+> Those fire only while that agent runs, both top level (`--agent X`) and as a
+> subagent (verified on CLI 1.0.98). A subagent runs under its **own** sessionId;
+> global hooks see its tool calls and its prompt (`userPromptSubmitted`) under that
+> child id. To scope by tool, use the `matcher` on `preToolUse`/`postToolUse`.
 
 ## What ships here
 
@@ -18,7 +21,8 @@ the CLI runs on its own, so it applies policy without the agent's cooperation
 | ---- | ------- |
 | `push-guard-hook.py` | `preToolUse` handler that **blocks `git push` to a protected branch** (main/master, plus any configured `baseBranch`) at the tool layer. This is the *enforcement* half of the `git-push-guard` skill. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** (fail-open defense-in-depth): (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
-| `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize + grounding gates** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` (humanize) and `--no-ground` (grounding/target preflight) on `pr_comments.py reply`/`comment`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
+| `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize + grounding gates** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, denies `--no-lint` / `--no-ground`, and denies `pr_comments.py reply`/`comment` without `--approval`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
+| `pr-post-gate-hook.py` | Global `preToolUse` (all tools) + `postToolUse` (`ask_user`, shell) + `userPromptSubmitted`, plus agent-scoped `review-prompt`/`review-pre` modes declared in `review-orchestrator`'s frontmatter. **Deterministic, fail-closed PR comment gate**: posting from a review is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant bound to session + PR + target + text hash that the hook mints only after the user answered `true` in an `ask_user` form showing the exact staged text; text must be humanized, have no hyphen/dash or semicolon outside `code`, and pass slophound (missing slophound = deny). Denies `gh`/`glab` comment commands, MCP comment tools, raw HTTP comment writes, `pr_comments` internals and approval-state access. Keeps review sessions (and every subagent they spawn) read-only: no edits, commits, pushes, merges, resolve/delete. Tests: `tests/test_pr_post_gate.py`. |
 | `hooks.example.json` | The hook registration the CLI reads. Copy it to `~/.copilot/hooks/`. |
 
 ## Why the shell-guard hook exists
@@ -67,7 +71,39 @@ bypasses `pr_comments.py` on GitHub, GitLab, or Bitbucket, and denies `--no-lint
 (humanize) and `--no-ground` (the grounding/target validity preflight) on a real
 post. Listing comments with a GET stays allowed, so reading feedback is
 never blocked. Like the other two, it is deny-only and fail-open: anything it
-cannot positively identify as a bypass is allowed.
+cannot positively identify as a bypass is allowed. It also denies a sanctioned
+`reply`/`comment` without `--approval`; the strict checks live in pr-post-gate.
+
+## Why the pr-post-gate hook exists
+
+Instructions like "only post after the user says yes" can be skipped or
+self-satisfied. If an approval token is minted at `stage`, before a human sees the
+text, an agent can approve itself. The gate moves the decision to the tool layer:
+
+1. `pr_comments.py stage` humanizes and checks the text and prints `APPROVAL_TOKEN=<t>`.
+   The token authorises nothing.
+2. The agent calls `ask_user` with `PR_POST_APPROVAL <t>`, the exact text, and only a
+   boolean `post_<t>` field with no default. `preToolUse` rejects malformed forms.
+3. `postToolUse` reads the real answer. Only `post_<t>=true` mints the grant.
+4. `reply`/`comment --approval <t>` is checked by the hook and the grant is consumed
+   atomically by `pr_comments.py` (replays are refused through a used-token ledger).
+
+Default OFF for reviews: inside `review-orchestrator` (and every reviewer it spawns)
+staging, approval and posting are denied unless the human typed
+`--post-comments=true` in the prompt. The flag only counts if it appears in the
+prompt the human typed (root session) **and** in the reviewer's own prompt, so an
+agent that adds the flag to a `task` prompt does not enable posting. Review sessions
+also stay read-only even with opt-in: no edits, commits, pushes, merges,
+`resolve` or `delete`.
+
+Text rules (checked at stage and again at post): humanized, no hyphen or dash and no
+semicolon outside `inline code`, and slophound must pass. A missing slophound denies.
+
+Fail behavior: unlike the other hooks, this one **fails closed** for comment
+actions (an internal error on a comment write denies it). A hook timeout fails open
+in the CLI, which is still safe because `pr_comments.py` re-verifies the grant and
+only the hook holds the signing key (`~/.copilot/hooks/.secrets/pr-post-gate.key`,
+auto-created). Non-comment tools are never affected outside review sessions.
 
 ## Install (user-level)
 
@@ -79,6 +115,7 @@ New-Item -ItemType Directory -Force "$env:USERPROFILE\.copilot\hooks" | Out-Null
 Copy-Item hooks\push-guard-hook.py "$env:USERPROFILE\.copilot\hooks\"
 Copy-Item hooks\shell-guard-hook.py "$env:USERPROFILE\.copilot\hooks\"
 Copy-Item hooks\slop-guard-hook.py "$env:USERPROFILE\.copilot\hooks\"
+Copy-Item hooks\pr-post-gate-hook.py "$env:USERPROFILE\.copilot\hooks\"
 Copy-Item hooks\hooks.example.json "$env:USERPROFILE\.copilot\hooks\kit-hooks.json"
 ```
 
@@ -88,10 +125,13 @@ mkdir -p ~/.copilot/hooks
 cp hooks/push-guard-hook.py ~/.copilot/hooks/
 cp hooks/shell-guard-hook.py ~/.copilot/hooks/
 cp hooks/slop-guard-hook.py ~/.copilot/hooks/
+cp hooks/pr-post-gate-hook.py ~/.copilot/hooks/
 cp hooks/hooks.example.json ~/.copilot/hooks/kit-hooks.json
 ```
 
-`scripts/install_to_copilot.py --hooks` does the same copy for you.
+`scripts/install_to_copilot.py --hooks` does the same copy for you. Even without
+`--hooks` the installer copies `pr-post-gate-hook.py` (inert until wired), because
+`review-orchestrator`'s frontmatter hooks and `pr_comments.py` load it.
 
 **Per-repo base branches — auto-wired by the installer.**
 `scripts/install_to_copilot.py --hooks` now sets `PUSH_GUARD_CONFIG` in the
@@ -195,6 +235,24 @@ Slop-guard:
 
 The full offline test suite lives in `tests/test_slop_guard.py`.
 
+PR-post-gate (each call is a fresh shell call in session `s`):
+
+```powershell
+# gh pr comment never posts, opted in or not:
+'{"sessionId":"s","toolName":"powershell","toolArgs":{"command":"gh pr comment 7 --body hi"}}' `
+  | python hooks\pr-post-gate-hook.py pre
+# -> {"permissionDecision":"deny",...}
+
+# A post with a token the user never approved is denied:
+'{"sessionId":"s","toolName":"powershell","toolArgs":{"command":"python pr_comments.py reply --slug s --pr 1 --comment 2 --approval 0123456789abcdef01234567"}}' `
+  | python hooks\pr-post-gate-hook.py pre
+# -> {"permissionDecision":"deny",...}
+```
+
+The full offline suite (47 negative-first tests: forged/expired/replayed grants,
+wrong target, changed text, agent-injected opt-in, bypasses, review read-only)
+lives in `tests/test_pr_post_gate.py`.
+
 > **Verifying subagent→session correlation live.** The correlation of
 > `subagentStart(sessionId)` → `preToolUse(sessionId)` cannot be observed offline
 > (hooks reload only on CLI start). After deploying, restart the CLI, run a
@@ -202,16 +260,22 @@ The full offline test suite lives in `tests/test_slop_guard.py`.
 > `~/.copilot/hooks/.readonly-sessions/` while it runs and is removed on stop. Even
 > if subagents share the parent `sessionId`, the marker covers the reviewer's
 > active window and is deny-only + fail-open, so a mismatch cannot brick a session.
+>
+> **Known gap (observed on CLI 1.0.98):** subagents run under their own sessionId,
+> while `subagentStart` reports the parent's. The shell-guard marker therefore lands
+> on the parent, not the reviewer. `pr-post-gate-hook.py` enforces review read-only
+> mode itself via prompt lineage, so reviewers spawned by `review-orchestrator`
+> are covered regardless.
 
 ## Uninstall
 
 ```powershell
-Remove-Item "$env:USERPROFILE\.copilot\hooks\kit-hooks.json", "$env:USERPROFILE\.copilot\hooks\push-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\shell-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\slop-guard-hook.py"
+Remove-Item "$env:USERPROFILE\.copilot\hooks\kit-hooks.json", "$env:USERPROFILE\.copilot\hooks\push-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\shell-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\slop-guard-hook.py", "$env:USERPROFILE\.copilot\hooks\pr-post-gate-hook.py"
 ```
 
 ## Other hooks worth considering (not shipped)
 
-We deliberately ship only the push-guard, shell-guard, and slop-guard hooks. Keep
+We deliberately ship only the push-guard, shell-guard, slop-guard and pr-post-gate hooks. Keep
 hooks minimal, deterministic, and stdlib-only — every hook is a moving part on the
 critical path of every tool call. Candidates you *could* add for your own setup:
 

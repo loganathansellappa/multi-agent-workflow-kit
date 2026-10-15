@@ -31,18 +31,24 @@ Then configure one host block for code review and a token file: see
 Server / Data Center REST; [`references/other-hosts.md`](references/other-hosts.md)
 covers GitHub, GitLab, and Bitbucket Cloud.
 
-Requirements: Python 3, `pyyaml`, and (recommended) `slophound` on `PATH` so the
-humanize gate is active.
+Requirements: Python 3, `pyyaml`, `slophound` on `PATH` (required: staging fails
+closed without it), and the kit hooks installed (`pr-post-gate-hook.py`).
 
 ## Usage
 
 ```
 python pr_comments.py list     --slug <slug> --pr <id> [--all]
-python pr_comments.py reply     --slug <slug> --pr <id> --comment <cid> --text "..."
-python pr_comments.py comment   --slug <slug> --pr <id> [--path F --line N] --text "..."
-python pr_comments.py resolve   --slug <slug> --pr <id> --comment <cid>
-python pr_comments.py humanize  --text "..."
+python pr_comments.py stage    --slug <slug> --pr <id> [--comment <cid> | --path F --line N] --text "..."
+python pr_comments.py reply    --slug <slug> --pr <id> --comment <cid> --approval <token>
+python pr_comments.py comment  --slug <slug> --pr <id> [--path F --line N] --approval <token>
+python pr_comments.py resolve  --slug <slug> --pr <id> --comment <cid>
+python pr_comments.py humanize --text "..."
 ```
+
+Every post is `stage` (prints `APPROVAL_TOKEN`) → `ask_user` showing
+`PR_POST_APPROVAL <token>` plus the exact text with a boolean `post_<token>` →
+the user answers true → `reply`/`comment --approval <token>` posts once. The
+`pr-post-gate` hook enforces each step. See [`SKILL.md`](SKILL.md).
 
 In practice you invoke the skill in natural language ("address the comments on my
 PR 1234 in service-a", "review PR 88 in service-b and post the findings"). The agent

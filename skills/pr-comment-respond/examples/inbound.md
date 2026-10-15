@@ -45,9 +45,18 @@ approval, then commit one line and push the task branch (never `main`).
 ## 5. Reply + resolve
 
 ```
-python pr_comments.py reply --slug service-a --pr 1234 --comment 51 \
+python pr_comments.py stage --slug service-a --pr 1234 --comment 51 \
   --text "Good catch. Added a 5 minute TTL and a test for eviction."
+# -> APPROVAL_TOKEN=3f9c0d1e2a4b5c6d7e8f9a0b
+```
+
+The agent then asks you with `ask_user`: the message holds `PR_POST_APPROVAL 3f9c0d1e2a4b5c6d7e8f9a0b`
+and the exact text, and the form has one boolean, `post_3f9c0d1e2a4b5c6d7e8f9a0b`. You answer true, the
+pr-post-gate hook mints a one-use grant, and only then:
+
+```
+python pr_comments.py reply --slug service-a --pr 1234 --comment 51 --approval 3f9c0d1e2a4b5c6d7e8f9a0b
 python pr_comments.py resolve --slug service-a --pr 1234 --comment 51
 ```
 
-The reply goes through the humanize gate first. A slop-flavored draft (`Great catch, I've carefully addressed this by ensuring robust expiry`) would be rejected. The plain version above passes.
+Staging runs the humanize gate first. A slop-flavored draft (`Great catch, I've carefully addressed this by ensuring robust expiry`) would be rejected, and so would a draft with a hyphen or a semicolon. The plain version above passes.

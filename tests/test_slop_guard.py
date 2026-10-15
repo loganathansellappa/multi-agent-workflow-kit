@@ -94,8 +94,12 @@ class Allowed(unittest.TestCase):
         self.assertEqual(run_hook("glab api projects/1/merge_requests/2/discussions"), {})
 
     def test_sanctioned_reply_allowed(self):
-        cmd = 'python pr_comments.py reply --slug s --pr 1 --comment 2 --text "good catch"'
+        cmd = 'python pr_comments.py reply --slug s --pr 1 --comment 2 --approval 0123456789abcdef'
         self.assertEqual(run_hook(cmd), {})
+
+    def test_reply_without_approval_denied(self):
+        cmd = 'python pr_comments.py reply --slug s --pr 1 --comment 2 --text "good catch"'
+        self.assertTrue(denied(run_hook(cmd)))
 
     def test_unrelated_command_allowed(self):
         self.assertEqual(run_hook("git status"), {})

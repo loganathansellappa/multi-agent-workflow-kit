@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.17.0] - 2026-10-15
+
+### Added
+- **`pr-post-gate` hook (`hooks/pr-post-gate-hook.py`): deterministic, opt-in PR comment posting.**
+  - Review posting is **OFF by default**. `--post-comments=true` in the human's prompt enables staging and
+    approval only; nothing is ever posted automatically. An agent cannot opt itself in via a `task` prompt.
+  - Every PR comment (any session) needs a **one-use, 15-minute HMAC grant** the hook mints only after the user
+    answers `true` to an `ask_user` form that shows the exact staged text (one boolean field, no default).
+    The grant is bound to session + repo + PR + kind + parent/path/line + text hash, and replay is refused.
+  - Denies bypasses: `gh`/`glab`/MCP/raw HTTP (`curl`, `Invoke-RestMethod`, `az`) comment writes, forged or
+    replayed tokens, edited text, and reads of the signing key/state.
+  - Keeps reviews read-only: no file edits, commits, pushes or merges from review agents.
+  - Wired globally in `hooks.example.json` and agent-scoped via `review-orchestrator` frontmatter `hooks:`.
+- **`pr_comments.py stage`**: humanizes, enforces no hyphen/dash or semicolon, runs slophound (required) and
+  grounding, then prints an `APPROVAL_TOKEN`. `reply`/`comment` now require `--approval <token>` and post the
+  staged text verbatim (the free-text, lint-skip and ground-skip flags were removed).
+- **Negative tests**: `tests/test_pr_post_gate.py` (47 cases) and a new `--approval` case in `test_slop_guard.py`.
+- **Animated walkthrough** `docs/pr-post-gate/` (HTML + 1080p MP4 + poster), linked from the README.
+
+### Changed
+- `install_to_copilot.py` always installs `pr-post-gate-hook.py` (even without `--hooks`) so the skill's grant
+  check works out of the box.
+- README, OVERVIEW, `hooks/README.md`, and the `pr-comment-respond` skill docs describe the new flow and setup
+  (`pipx install slophound`).
+
 ## [1.16.0] - 2026-10-12
 
 ### Added

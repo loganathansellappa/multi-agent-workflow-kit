@@ -3,17 +3,27 @@
 
 Subcommands:
   list     - print actionable reviewer comments on a PR as JSON
-  reply    - post a reply to a comment thread
-  comment  - post a NEW review comment (general or inline)
+  stage    - humanize + rule-check + grounding-check text, print APPROVAL_TOKEN
+  reply    - post a staged reply (requires --approval and the user's approval)
+  comment  - post a staged NEW review comment (general or inline)
   resolve  - mark a comment thread RESOLVED
-  humanize - sanitize + slophound-check text; prints cleaned text
+  humanize - sanitize + rule-check text only; prints cleaned text
 
-`reply`/`comment` run a deterministic validity preflight before posting: the body
-must be non-empty/non-placeholder, a `reply` target comment must exist and not be
-RESOLVED, and every file / file:line (and, with --strict, every commit SHA) cited
-in the text must resolve to THIS PR. It catches structural false positives; it does
-not (and cannot) certify that the reply is semantically correct. Opt out per-call
-with --no-ground.
+Posting is approval-gated and enforced by ~/.copilot/hooks/pr-post-gate-hook.py:
+  1. stage   humanizes the text, applies the deterministic comment rules (no
+             hyphen/dash, no semicolon outside `code`, slophound must pass, fail
+             closed if slophound is missing), runs the grounding preflight and
+             prints APPROVAL_TOKEN=<t>. The token alone authorises nothing.
+  2. ask_user must show the exact staged text plus the line `PR_POST_APPROVAL <t>`
+             and a boolean field `post_<t>` with no default. The hook mints a
+             signed, one-use, target-bound grant only when the user answers true.
+  3. reply/comment --approval <t> atomically consumes that grant, re-checks the
+             text and posts exactly the staged text.
+The grounding preflight (run at stage, before the user is asked): the body must be
+non-empty/non-placeholder, a reply target comment must exist and not be RESOLVED,
+and every file / file:line (and, with --strict, every commit SHA) cited in the
+text must resolve to THIS PR. It catches structural false positives; it does not
+certify that the reply is semantically correct.
 
 Self-configures from the kit config (code-review host base URL, token file, and a
 repo-slug -> service map that resolves each slug to its local repoPath, baseBranch,
@@ -26,12 +36,14 @@ Used by the `pr-comment-respond` skill so an agent can reply/resolve directly.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
-import shutil
+import secrets
 import ssl
-import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -39,53 +51,70 @@ from pathlib import Path
 
 import yaml
 
+COPILOT_HOME = Path(os.environ.get("COPILOT_HOME") or (Path.home() / ".copilot"))
 # Kit config (repos, models, and the code-review host block). Override with --config.
-DEFAULT_CONFIG = Path.home() / ".copilot" / "agents" / "agents.config.yaml"
-
-# --- humanize: strip the punctuation tells AI loves before anything is posted
-_SMART = {
-    "\u2014": "-", "\u2013": "-",            # em / en dash -> hyphen
-    "\u2018": "'", "\u2019": "'",            # curly single quotes
-    "\u201c": '"', "\u201d": '"',            # curly double quotes
-    "\u2026": "...", "\u00a0": " ",          # ellipsis, non-breaking space
-}
-_EMOJI = re.compile(
-    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF"
-    "\U00002190-\U000021FF\U0000FE0F]"
-)
+DEFAULT_CONFIG = COPILOT_HOME / "agents" / "agents.config.yaml"
+APPROVAL_DIR = COPILOT_HOME / ".pr-approvals"
+GATE_FILE = COPILOT_HOME / "hooks" / "pr-post-gate-hook.py"
 
 
-def humanize_text(text: str) -> str:
-    for k, v in _SMART.items():
-        text = text.replace(k, v)
-    text = _EMOJI.sub("", text)
-    text = re.sub(r"[ \t]{2,}", " ", text)
-    text = re.sub(r" +\n", "\n", text)
-    return text.strip()
+def load_gate():
+    """Import the gate hook by path. Without it nothing can be staged or posted."""
+    import importlib.util
+    if not GATE_FILE.exists():
+        sys.exit(f"pr-post-gate hook not found at {GATE_FILE}. Install the kit hooks "
+                 f"(scripts/install_to_copilot.py --hooks); posting fails closed without it.")
+    spec = importlib.util.spec_from_file_location("pr_post_gate", GATE_FILE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
-def slophound_lint(text: str):
-    """Return (is_human, report). Missing/failed tool is treated as a skip."""
-    exe = shutil.which("slophound")
-    if not exe:
-        return True, "(slophound not installed; skipped)"
-    p = subprocess.run([exe, "--formal", "--no-footer", "-"],
-                       input=text, capture_output=True, text=True)
-    if p.returncode == 2:
-        return True, "(slophound failed; skipped)"
-    return p.returncode == 0, (p.stdout or p.stderr).strip()
+# --- staged records: stage writes the exact final text and PR target. The token
+# authorises nothing by itself. Posting needs the hook minted grant (see docstring).
+def _text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def finalize_text(text: str, no_lint: bool) -> str:
-    text = humanize_text(text)
-    if not no_lint:
-        ok, report = slophound_lint(text)
-        if not ok:
-            sys.stderr.write(
-                "Rejected: the text still reads as AI-generated (slophound bites).\n"
-                "Rewrite it plainer and more human, then retry:\n" + report + "\n")
-            sys.exit(3)
-    return text
+def _approval_path(token: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{16,64}", token or ""):
+        sys.exit("Invalid approval token format.")
+    return APPROVAL_DIR / f"{token}.json"
+
+
+def _write_approval(record: dict) -> str:
+    APPROVAL_DIR.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_hex(12)
+    record["token"] = token
+    record["created"] = int(time.time())
+    _approval_path(token).write_text(json.dumps(record), encoding="utf-8")
+    return token
+
+
+APPROVAL_TTL = 15 * 60
+
+
+def _load_approval(token: str, slug: str, pr: int, kind: str) -> dict:
+    p = _approval_path(token)
+    if not p.exists():
+        sys.exit(f"No staged approval for token {token}. Run `stage` first and get "
+                 f"the user's explicit yes before posting.")
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    age = int(time.time()) - int(rec.get("created", 0))
+    if age > APPROVAL_TTL:
+        p.unlink(missing_ok=True)
+        sys.exit(f"Approval token expired ({age}s > {APPROVAL_TTL}s). Re-stage and "
+                 f"re-confirm with the user.")
+    if rec.get("slug") != slug or int(rec.get("pr")) != int(pr) or rec.get("kind") != kind:
+        sys.exit("Approval token does not match this PR/target. Re-stage.")
+    if _text_hash(rec.get("text", "")) != rec.get("hash"):
+        p.unlink(missing_ok=True)
+        sys.exit("Staged text failed integrity check (tampered). Re-stage.")
+    return rec
+
+
+def _consume_approval(token: str) -> None:
+    _approval_path(token).unlink(missing_ok=True)
 
 
 # --- grounding: every checkable reference in a post must resolve to THIS PR ------
@@ -237,7 +266,7 @@ def preflight(bb, proj, slug, pr, text, args, comment_id=None, extra_files=()):
         sys.stderr.write(
             "Rejected (grounding): the post cites things that are not in this PR:\n  - "
             + "\n  - ".join(problems)
-            + "\nFix the references, or pass --no-ground if the citation is intentional.\n")
+            + "\nFix the references in the text and stage again.\n")
         sys.exit(4)
 
 
@@ -352,41 +381,102 @@ def cmd_list(bb, cfg, args):
     }, indent=2))
 
 
+def stage_text(gate, text: str) -> str:
+    """Humanize + apply the deterministic comment rules. Exit 3 on any problem."""
+    final = gate.humanize(text)
+    problems = gate.check_text(final)
+    if problems:
+        sys.stderr.write("Rejected, rewrite the comment and stage again:\n  * "
+                         + "\n  * ".join(problems) + "\n")
+        sys.exit(3)
+    return final
+
+
+def cmd_stage(bb, cfg, args):
+    gate = load_gate()
+    proj, _ = project_for(cfg, args.slug)
+    if args.comment is not None:
+        kind, target = "reply", {"comment": str(args.comment)}
+    elif args.path:
+        kind, target = "inline", {"path": args.path, "line": args.line}
+    else:
+        kind, target = "general", {}
+    text = args.text if args.text is not None else sys.stdin.read()
+    final = stage_text(gate, text)
+    preflight(bb, proj, args.slug, args.pr, final, args,
+              comment_id=args.comment if kind == "reply" else None,
+              extra_files=(args.path,) if args.path else ())
+    rec = {"slug": args.slug, "pr": int(args.pr), "kind": kind,
+           "text": final, "hash": _text_hash(final), **target}
+    token = _write_approval(rec)
+    where = (f"reply to {args.comment}" if kind == "reply"
+             else f"inline {args.path}:{args.line}" if kind == "inline"
+             else "general comment")
+    sys.stderr.write(
+        f"STAGED {kind} on {args.slug} #{args.pr} ({where}). Nothing is approved yet.\n"
+        f"Next: call ask_user with a message that contains the line\n"
+        f"  PR_POST_APPROVAL {token}\n"
+        f"followed by the final text below copied character for character, and a\n"
+        f"requestedSchema with ONLY a boolean field `post_{token}` (no default).\n"
+        f"The pr-post-gate hook mints a one-use grant only if the user answers true.\n")
+    print(f"APPROVAL_TOKEN={token}")
+    print("--- final text (copy exactly into ask_user) ---")
+    print(final)
+
+
+def _post_guarded(args, kind, comment=None, path=None, line=None):
+    gate = load_gate()
+    rec = _load_approval(args.approval, args.slug, args.pr, kind)
+    ok, why, _ = gate.consume_grant(args.approval, args.slug, int(args.pr), kind,
+                                    comment, path, line)
+    if not ok:
+        sys.exit(f"Refused: {why}")
+    problems = gate.check_text(rec["text"])
+    if problems:
+        _consume_approval(args.approval)
+        sys.exit("Refused: staged text breaks the comment rules: " + " | ".join(problems))
+    return rec
+
+
 def cmd_reply(bb, cfg, args):
     proj, _ = project_for(cfg, args.slug)
-    text = args.text if args.text is not None else sys.stdin.read()
-    preflight(bb, proj, args.slug, args.pr, text, args, comment_id=args.comment)
-    text = finalize_text(text, args.no_lint)
-    bb.req("POST", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}/comments",
-           {"text": text, "parent": {"id": args.comment}})
+    rec = _post_guarded(args, "reply", comment=str(args.comment))
+    try:
+        bb.req("POST", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}/comments",
+               {"text": rec["text"], "parent": {"id": int(args.comment)}})
+    finally:
+        _consume_approval(args.approval)
     print(f"replied to #{args.comment}")
 
 
 def cmd_comment(bb, cfg, args):
     proj, _ = project_for(cfg, args.slug)
-    text = args.text if args.text is not None else sys.stdin.read()
-    preflight(bb, proj, args.slug, args.pr, text, args,
-              extra_files=(args.path,) if args.path else ())
-    text = finalize_text(text, args.no_lint)
-    body = {"text": text}
+    kind = "inline" if args.path else "general"
+    rec = _post_guarded(args, kind, path=args.path, line=args.line)
+    body = {"text": rec["text"]}
     if args.path:
         anchor = {"path": args.path, "diffType": "EFFECTIVE",
                   "lineType": "CONTEXT", "fileType": "TO"}
         if args.line is not None:
             anchor["line"] = args.line
         body["anchor"] = anchor
-    res = bb.req("POST", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}/comments", body)
+    try:
+        res = bb.req("POST", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}/comments", body)
+    finally:
+        _consume_approval(args.approval)
     where = f"{args.path}:{args.line}" if args.path else "(general)"
     print(f"posted comment #{res.get('id')} on PR #{args.pr} @ {where}")
 
 
 def cmd_humanize(bb, cfg, args):
+    gate = load_gate()
     text = args.text if args.text is not None else sys.stdin.read()
-    cleaned = humanize_text(text)
-    ok, report = slophound_lint(cleaned)
-    sys.stderr.write(("HUMAN OK\n" if ok else "AI SLOP DETECTED\n") + report + "\n")
+    cleaned = gate.humanize(text)
+    problems = gate.check_text(cleaned)
+    sys.stderr.write(("HUMAN OK\n" if not problems else "REJECTED\n  * "
+                      + "\n  * ".join(problems)) + "\n")
     print(cleaned)
-    if not ok:
+    if problems:
         sys.exit(3)
 
 
@@ -408,30 +498,30 @@ def main():
     pl.add_argument("--pr", type=int, required=True)
     pl.add_argument("--all", action="store_true", help="include resolved/own/replied too")
 
-    pr_ = sub.add_parser("reply", help="reply to a comment")
+    st = sub.add_parser("stage", help="humanize + rule-check + ground text and print a one-use approval token")
+    st.add_argument("--slug", required=True)
+    st.add_argument("--pr", type=int, required=True)
+    st.add_argument("--comment", type=int, help="reply target comment id (omit for a new comment)")
+    st.add_argument("--path", help="file path (for an inline comment)")
+    st.add_argument("--line", type=int, help="line number (for an inline comment)")
+    st.add_argument("--text", help="text (or pass via stdin)")
+    st.add_argument("--strict", action="store_true",
+                    help="strict grounding: cited files AND commit SHAs must be in the PR diff")
+
+    pr_ = sub.add_parser("reply", help="post a staged reply (requires --approval and the user's yes)")
     pr_.add_argument("--slug", required=True)
     pr_.add_argument("--pr", type=int, required=True)
     pr_.add_argument("--comment", type=int, required=True)
-    pr_.add_argument("--text", help="reply text (or pass via stdin)")
-    pr_.add_argument("--no-lint", action="store_true", help="skip humanize/slophound gate")
-    pr_.add_argument("--no-ground", action="store_true",
-                     help="skip the grounding/target validity preflight (intentional citations)")
-    pr_.add_argument("--strict", action="store_true",
-                     help="strict grounding: cited files AND commit SHAs must be in the PR diff")
+    pr_.add_argument("--approval", required=True, help="one-use token from `stage`, granted via ask_user")
 
-    nc = sub.add_parser("comment", help="post a NEW review comment (general or inline)")
+    nc = sub.add_parser("comment", help="post a staged NEW review comment (requires --approval)")
     nc.add_argument("--slug", required=True)
     nc.add_argument("--pr", type=int, required=True)
     nc.add_argument("--path", help="file path for an inline comment (omit for general)")
     nc.add_argument("--line", type=int, help="line number for an inline comment")
-    nc.add_argument("--text", help="comment text (or pass via stdin)")
-    nc.add_argument("--no-lint", action="store_true", help="skip humanize/slophound gate")
-    nc.add_argument("--no-ground", action="store_true",
-                    help="skip the grounding/target validity preflight (intentional citations)")
-    nc.add_argument("--strict", action="store_true",
-                    help="strict grounding: cited files AND commit SHAs must be in the PR diff")
+    nc.add_argument("--approval", required=True, help="one-use token from `stage`, granted via ask_user")
 
-    hm = sub.add_parser("humanize", help="sanitize + slophound-check text; prints cleaned text")
+    hm = sub.add_parser("humanize", help="sanitize + rule-check text; prints cleaned text")
     hm.add_argument("--text", help="text to check (or pass via stdin)")
 
     rs = sub.add_parser("resolve", help="resolve a comment thread")
@@ -444,11 +534,15 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+    handler = {"list": cmd_list, "stage": cmd_stage, "reply": cmd_reply, "comment": cmd_comment,
+               "humanize": cmd_humanize, "resolve": cmd_resolve}[args.cmd]
+    if args.cmd == "humanize":
+        handler(None, None, args)
+        return
     cfg = load_config(Path(args.config))
     bb = BB(cfg)
     try:
-        {"list": cmd_list, "reply": cmd_reply, "comment": cmd_comment,
-         "humanize": cmd_humanize, "resolve": cmd_resolve}[args.cmd](bb, cfg, args)
+        handler(bb, cfg, args)
     except urllib.error.HTTPError as e:
         sys.exit(f"Code-review API error {e.code}: {e.read().decode('utf-8', 'replace')}")
 

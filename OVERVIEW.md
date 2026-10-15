@@ -69,8 +69,9 @@ coverage.
 
 - `push-guard-hook.py` — blocks a confirmed `git push` to a repo's protected base branch (config-driven, not just `main`), **and** softly refuses a push when the repo's recorded `workflow-state` gate is `FAIL` (no record or `PASS` = allowed).
 - `shell-guard-hook.py` — enforces the reviewer **read-only shell boundary** (blocks secret-file reads / workspace mutation even though reviewers still hold a shell).
-- `slop-guard-hook.py` — enforces the **PR-comment humanize + grounding gates**: denies a comment POST that bypasses the gated `pr_comments.py` (GitHub, GitLab, Bitbucket) and denies `--no-lint` (humanize) and `--no-ground` (grounding/target preflight) on a real post.
-- `hooks.example.json` — registers all three guards on the CLI's `preToolUse` + subagent lifecycle events.
+- `slop-guard-hook.py` — enforces the **PR-comment humanize + grounding gates**: denies a comment POST that bypasses the gated `pr_comments.py` (GitHub, GitLab, Bitbucket), denies `--no-lint`/`--no-ground`, and denies a post without `--approval`.
+- `pr-post-gate-hook.py` — the **deterministic, fail-closed PR comment gate**: review posting is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant minted only from the user's `true` in an `ask_user` form showing the exact text, bound to session + PR + target + text. Enforces no hyphen/dash, no semicolon, slophound clean, and keeps reviews read-only. Also wired as agent-scoped frontmatter hooks in `review-orchestrator`.
+- `hooks.example.json` — registers the guards on the CLI's `preToolUse` / `postToolUse` / `userPromptSubmitted` + subagent lifecycle events.
 
 ## Where things live
 

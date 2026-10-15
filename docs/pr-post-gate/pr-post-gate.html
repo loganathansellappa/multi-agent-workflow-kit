@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Multi-Agent Workflow Kit: opt-in PR comment posting (pr-post-gate)</title>
+<style>
+  :root { --bg:#0b1020; --panel:#141b33; --panel2:#10173a; --line:#2a3560; --txt:#e8ecff; --mute:#8d97c4; --acc:#4fd1ff; --ok:#3ddc97; --warn:#ffb547; --bad:#ff5d73; --vio:#b388ff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { width:1920px; height:1080px; overflow:hidden; background:var(--bg); color:var(--txt); font-family:"Segoe UI",system-ui,sans-serif; }
+  #stage { position:relative; width:1920px; height:1080px; background:radial-gradient(1200px 700px at 82% 8%, #1a2350 0%, transparent 60%), radial-gradient(900px 600px at 8% 92%, #1a1440 0%, transparent 60%), var(--bg); }
+  .scene { position:absolute; inset:0 0 120px 0; padding:70px 120px; opacity:0; transform:translateY(20px); transition:opacity .5s, transform .5s; }
+  .scene.on { opacity:1; transform:none; }
+  .scene.center { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  [data-at] { opacity:0; transform:translateY(14px); transition:opacity .45s, transform .45s; }
+  [data-at].show { opacity:1; transform:none; }
+  h1 { font-size:104px; font-weight:800; letter-spacing:-3px; }
+  h2 { font-size:58px; font-weight:700; margin-bottom:30px; letter-spacing:-1px; }
+  .acc{color:var(--acc)} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)} .vio{color:var(--vio)} .mute{color:var(--mute)}
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:30px 44px; box-shadow:0 20px 60px #0008; }
+  #caption { position:absolute; left:0; right:0; bottom:0; height:120px; display:flex; align-items:center; justify-content:center; font-size:34px; background:linear-gradient(transparent, #000a 42%); color:#fff; padding:0 150px; text-align:center; }
+  #progress { position:absolute; left:0; bottom:0; height:6px; background:var(--acc); width:0; z-index:5; }
+  #phase { position:absolute; top:40px; right:60px; font-family:Consolas,monospace; font-size:26px; color:var(--mute); letter-spacing:2px; }
+  .term { font-family:"Cascadia Code",Consolas,monospace; font-size:34px; line-height:1.6; }
+  .term .p { color:var(--acc); }
+  .deny { margin-top:18px; padding:20px 28px; border-radius:16px; border:2px solid var(--bad); background:#241026; font-family:Consolas,monospace; font-size:30px; color:#ffd0dc; }
+  .allow { margin-top:18px; padding:20px 28px; border-radius:16px; border:2px solid var(--ok); background:#102a20; font-family:Consolas,monospace; font-size:30px; color:#c8ffe6; }
+  .pill { display:inline-block; padding:11px 24px; border:1px solid var(--line); border-radius:999px; font-size:28px; color:var(--mute); margin:7px; background:#10173099; }
+  .chk { font-size:36px; line-height:1.8; }
+  .row2 { display:flex; gap:40px; align-items:stretch; }
+  .form { width:1180px; margin:0 auto; background:#0f1530; border:2px solid var(--acc); border-radius:22px; padding:34px 48px; box-shadow:0 0 50px #4fd1ff33; }
+  .form .ttl { font-family:Consolas,monospace; color:var(--acc); font-size:30px; letter-spacing:2px; }
+  .form .txt { margin:20px 0; padding:22px 28px; background:var(--panel); border-left:6px solid var(--vio); font-size:36px; border-radius:10px; }
+  .toggle { display:flex; align-items:center; gap:22px; font-family:Consolas,monospace; font-size:32px; }
+  .sw { width:96px; height:50px; border-radius:30px; background:#2a3560; position:relative; transition:background .4s; }
+  .sw::after { content:""; position:absolute; top:6px; left:6px; width:38px; height:38px; border-radius:50%; background:#cfd6ff; transition:left .4s; }
+  .sw.on { background:var(--ok); } .sw.on::after { left:52px; }
+  .grant { display:grid; grid-template-columns:repeat(3, 1fr); gap:22px; margin-top:26px; }
+  .grant div { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; font-size:32px; text-align:center; }
+  .grant b { display:block; color:var(--ok); font-size:26px; letter-spacing:2px; margin-bottom:6px; font-family:Consolas,monospace; }
+  .bp { display:grid; grid-template-columns:1fr 1fr; gap:18px 30px; }
+  .bp div { font-family:Consolas,monospace; font-size:29px; padding:18px 24px; border-radius:14px; background:#241026; border:1px solid #7a2a55; color:#ffd0e4; }
+  .bp div::before { content:"\2716  "; color:var(--bad); }
+  .hookcard { display:inline-block; border-radius:26px; padding:40px 64px; text-align:center; border:3px solid var(--ok); background:#102a20; }
+  .scene.on .hookcard { animation:okpulse 1.8s ease-out infinite; }
+  @keyframes okpulse { 0%{box-shadow:0 0 0 0 #3ddc9766} 70%{box-shadow:0 0 0 46px #3ddc9700} 100%{box-shadow:0 0 0 0 #3ddc9700} }
+  .strike { text-decoration:line-through; color:var(--bad); }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- 1 TITLE -->
+  <section class="scene center" data-start="0" data-end="6" data-cap="Reviews stay silent by default. Posting a PR comment needs your opt in and your explicit yes, enforced by a hook.">
+    <div data-at="0.1" style="font-size:110px">&#128737;&#65039;</div>
+    <h1 data-at="0.3">opt-in PR comments, <span class="acc">hook-enforced</span></h1>
+    <p data-at="1.2" style="font-size:42px;color:var(--mute);margin-top:16px">review-orchestrator · pr-comment-respond · pr-post-gate-hook.py</p>
+    <div data-at="2.4" style="margin-top:34px">
+      <span class="pill">default OFF</span><span class="pill">exact-text approval</span><span class="pill">one-use grant</span><span class="pill">bypasses denied</span>
+    </div>
+  </section>
+
+  <!-- 2 DEFAULT OFF -->
+  <section class="scene" data-start="6" data-end="15" data-cap="Without the flag, the review only writes a report. Any attempt to stage, approve or post is denied by pr-post-gate.">
+    <h2 data-at="0">1 · Default: <span class="bad">no posting</span></h2>
+    <div class="card term" data-at="0.4">
+      <div><span class="p">$</span> copilot --agent review-orchestrator</div>
+      <div><span class="p">&gt;</span> serviceA: feature/login-fix</div>
+      <div class="mute" data-at="1.6">… 3 findings, report written</div>
+      <div data-at="3">agent&gt; python pr_comments.py stage --slug service-a --pr 88 …</div>
+    </div>
+    <div class="deny" data-at="4.2">DENIED  pr-post-gate: PR comment posting is OFF for this review.<br>The human must put --post-comments=true in the prompt.</div>
+  </section>
+
+  <!-- 3 OPT IN -->
+  <section class="scene" data-start="15" data-end="24" data-cap="The flag goes inside the prompt. It unlocks staging plus approval, never automatic posting. An agent cannot opt itself in.">
+    <h2 data-at="0">2 · Opt in: <span class="ok">--post-comments=true</span></h2>
+    <div class="card term" data-at="0.4">
+      <div><span class="p">&gt;</span> serviceA: feature/login-fix <span class="ok">--post-comments=true</span></div>
+    </div>
+    <div class="row2" style="margin-top:30px">
+      <div class="card chk" data-at="1.6" style="flex:1">
+        <div class="ok">&#10004; staging allowed</div>
+        <div class="ok">&#10004; ask_user approval allowed</div>
+        <div class="bad">&#10006; automatic posting</div>
+      </div>
+      <div class="card chk" data-at="3" style="flex:1">
+        <div>Counts only if the <b>human</b> typed it</div>
+        <div class="mute">root prompt <b>and</b> the reviewer's own prompt</div>
+        <div class="bad">agent-injected flag &#8594; ignored</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 STAGE -->
+  <section class="scene" data-start="24" data-end="35" data-cap="stage humanizes the text and applies fixed rules: no hyphen or dash, no semicolon, slophound must pass. Missing slophound fails closed.">
+    <h2 data-at="0">3 · Stage: humanize + rules</h2>
+    <div class="card term" data-at="0.4" style="font-size:31px">
+      <div><span class="p">$</span> pr_comments.py stage --slug service-a --pr 88 --path src/auth.py --line 42 \</div>
+      <div>&nbsp;&nbsp;--text "<span class="strike">Great catch — I've carefully ensured robust expiry; fixed.</span>"</div>
+      <div class="deny" data-at="1.8" style="font-size:28px">REJECTED  dash · semicolon · slophound: "carefully", "ensured robust"</div>
+      <div data-at="4">&nbsp;&nbsp;--text "<span class="ok">The token never expires here. A 5 minute TTL would fix it.</span>"</div>
+      <div class="allow" data-at="5.4" style="font-size:28px">STAGED  APPROVAL_TOKEN=3f9c0d1e2a4b5c6d7e8f9a0b   (authorises nothing yet)</div>
+    </div>
+  </section>
+
+  <!-- 5 ASK USER -->
+  <section class="scene" data-start="35" data-end="45" data-cap="The agent must show you the exact staged text with one boolean field and no default. Malformed forms are rejected by the hook.">
+    <h2 data-at="0">4 · You approve the <span class="acc">exact</span> text</h2>
+    <div class="form" data-at="0.4">
+      <div class="ttl">ask_user · PR_POST_APPROVAL 3f9c0d1e2a4b5c6d7e8f9a0b</div>
+      <div class="txt">The token never expires here. A 5 minute TTL would fix it.</div>
+      <div class="mute" style="font-size:28px;margin-bottom:18px">service-a #88 · inline src/auth.py:42</div>
+      <div class="toggle"><span>post_3f9c0d1e2a4b5c6d7e8f9a0b</span><div class="sw" id="sw"></div><span id="swv" class="mute">(no default)</span></div>
+    </div>
+  </section>
+
+  <!-- 6 GRANT -->
+  <section class="scene" data-start="45" data-end="54" data-cap="postToolUse reads your real answer. Only true mints a signed grant, bound to this session, this PR, this target and this exact text.">
+    <h2 data-at="0">5 · Your <span class="ok">true</span> mints a grant</h2>
+    <div class="card term" data-at="0.4" style="font-size:31px">User responded: post_3f9c0d1e2a4b5c6d7e8f9a0b=<span class="ok">true</span></div>
+    <div class="grant">
+      <div data-at="1.4"><b>SIGNED</b>HMAC, key only the hook holds</div>
+      <div data-at="2"><b>ONE USE</b>consumed atomically</div>
+      <div data-at="2.6"><b>15 MIN</b>then it expires</div>
+      <div data-at="3.2"><b>SESSION</b>this session only</div>
+      <div data-at="3.8"><b>TARGET</b>slug · PR · path · line</div>
+      <div data-at="4.4"><b>TEXT</b>sha256 of the staged text</div>
+    </div>
+    <div class="mute" data-at="5.6" style="font-size:30px;margin-top:22px">No, cancel or no answer &#8594; nothing is minted.</div>
+  </section>
+
+  <!-- 7 POST -->
+  <section class="scene" data-start="54" data-end="62" data-cap="The post runs once with the token. A replay, a changed text or a different target is refused.">
+    <h2 data-at="0">6 · Post exactly once</h2>
+    <div class="card term" data-at="0.4" style="font-size:31px">
+      <div><span class="p">$</span> pr_comments.py comment --slug service-a --pr 88 --path src/auth.py --line 42 --approval 3f9c…</div>
+      <div class="allow" data-at="1.4" style="font-size:28px">posted comment #5121 on PR #88 @ src/auth.py:42</div>
+      <div data-at="3.2" style="margin-top:22px"><span class="p">$</span> … same command again</div>
+      <div class="deny" data-at="4.2" style="font-size:28px">DENIED  token already used</div>
+    </div>
+  </section>
+
+  <!-- 8 BYPASSES -->
+  <section class="scene" data-start="62" data-end="72" data-cap="Every other way to write a PR comment is denied at the tool layer, even when the command also names pr_comments.py.">
+    <h2 data-at="0">7 · Bypasses are <span class="bad">denied</span></h2>
+    <div class="bp">
+      <div data-at="0.5">gh pr comment 88 --body …</div>
+      <div data-at="1">glab mr note 88 …</div>
+      <div data-at="1.5">MCP add_comment / review tools</div>
+      <div data-at="2">curl -X POST …/pull-requests/88/comments</div>
+      <div data-at="2.5">python -c "import pr_comments; …"</div>
+      <div data-at="3">reading the grant state or signing key</div>
+      <div data-at="3.5">two posts in one shell call</div>
+      <div data-at="4">a self-approved or forged grant</div>
+    </div>
+  </section>
+
+  <!-- 9 READ ONLY -->
+  <section class="scene center" data-start="72" data-end="79" data-cap="Opt in only touches comments. The review and every reviewer it spawns stay read only: no edits, commits, pushes or merges.">
+    <div class="hookcard" data-at="0.2">
+      <div style="font-family:Consolas,monospace;font-size:32px;letter-spacing:3px;color:var(--mute)">REVIEW SESSIONS</div>
+      <div style="font-size:74px;font-weight:800;margin:8px 0 24px">always <span class="ok">read only</span></div>
+      <div class="chk" style="text-align:left;display:inline-block">
+        <div class="bad">&#10006; edit / create files</div>
+        <div class="bad">&#10006; git commit · push · merge · reset</div>
+        <div class="bad">&#10006; resolve / delete threads</div>
+        <div class="ok">&#10004; git diff · log · fetch · read</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 INSTALL -->
+  <section class="scene" data-start="79" data-end="88" data-cap="Plug and play: install with hooks, restart the CLI, add slophound. Then type --post-comments=true when you want comments posted.">
+    <h2 data-at="0">Set it up in three steps</h2>
+    <div class="card term" data-at="0.4">
+      <div><span class="p">$</span> python scripts/install_to_copilot.py --hooks</div>
+      <div data-at="1.4"><span class="p">$</span> pipx install slophound</div>
+      <div data-at="2.4" class="mute"># restart the Copilot CLI so hooks reload</div>
+      <div data-at="3.6"><span class="p">$</span> copilot --agent review-orchestrator</div>
+      <div data-at="4.4"><span class="p">&gt;</span> serviceA: feature/login-fix <span class="ok">--post-comments=true</span></div>
+    </div>
+    <div class="mute" data-at="5.6" style="font-size:30px;margin-top:24px">Tests: tests/test_pr_post_gate.py · Docs: hooks/README.md · skills/pr-comment-respond/SKILL.md</div>
+  </section>
+
+  <div id="phase"></div>
+  <div id="caption"></div>
+  <div id="progress"></div>
+</div>
+
+<script>
+(() => {
+  const TOTAL = 88;
+  const scenes = [...document.querySelectorAll('.scene')];
+  const cap = document.getElementById('caption');
+  const prog = document.getElementById('progress');
+  const phase = document.getElementById('phase');
+  const sw = document.getElementById('sw'), swv = document.getElementById('swv');
+  let t0 = null;
+
+  function frame(now) {
+    const t = (now - t0) / 1000;
+    prog.style.width = Math.min(100, t / TOTAL * 100) + '%';
+    let capText = '', idx = 0, i = 0;
+    for (const s of scenes) {
+      const a = +s.dataset.start, b = +s.dataset.end, on = t >= a && t < b, lt = t - a;
+      s.classList.toggle('on', on);
+      if (on) { capText = s.dataset.cap; idx = i; }
+      s.querySelectorAll('[data-at]').forEach(e => e.classList.toggle('show', on && lt >= +e.dataset.at));
+      i++;
+    }
+    if (cap.textContent !== capText) cap.textContent = capText;
+    const ph = 'STEP ' + String(idx + 1).padStart(2, '0') + ' / ' + scenes.length;
+    if (phase.textContent !== ph) phase.textContent = ph;
+
+    // ask_user scene: the human flips the toggle to true after reading the text.
+    const flipped = t >= 41;
+    sw.classList.toggle('on', flipped);
+    const v = flipped ? 'true' : '(no default)';
+    if (swv.textContent !== v) { swv.textContent = v; swv.className = flipped ? 'ok' : 'mute'; }
+
+    if (t < TOTAL) requestAnimationFrame(frame); else window.__done = true;
+  }
+
+  window.__start = () => { t0 = performance.now(); requestAnimationFrame(frame); };
+  const imgs = [...document.images];
+  Promise.all(imgs.map(i => i.complete ? 1 : new Promise(r => { i.onload = i.onerror = r; }))).then(() => {
+    window.__ready = true;
+    if (!location.search.includes('record')) window.__start();
+  });
+})();
+</script>
+</body>
+</html>
