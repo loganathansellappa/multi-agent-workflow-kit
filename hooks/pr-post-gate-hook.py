@@ -712,6 +712,13 @@ def handle_post(payload):
     valid_result = res.get("resultType", "success") == "success" \
         and action in (None, "accept")
     answers = parse_answers(answer_text) if valid_result and isinstance(answer_text, str) else None
+    # A single-field invocation also binds the short CLI response to its sole token.
+    # Never substitute it for a present but malformed detailed log or a batch form.
+    if valid_result and "sessionLog" not in res and "session_log" not in res and \
+            len(tokens) == 1 and not probs:
+        short = re.fullmatch(r"User responded:\s*(post|edit|skip|true|false)\s*", text)
+        if short:
+            answers = {tokens[0]: short.group(1)}
     approved, declined, editing = [], [], []
     for t in tokens:
         field = ((args.get("requestedSchema") or {}).get("properties") or {}).get(f"post_{t}") or {}
@@ -741,8 +748,13 @@ def handle_post(payload):
                      f"--slug {rec.get('slug')} --pr {rec.get('pr')} {tgt} --approval {t}` "
                      f"(valid {GRANT_TTL // 60} min, one use, this session only).")
     if declined:
+        reason = (" | ".join(probs) if probs else
+                  "tool result failed or was cancelled" if not valid_result else
+                  "missing or malformed token-bound answer" if answers is None else
+                  "answer tokens do not match this approval form" if set(answers) != set(tokens) else
+                  "user selected Edit text or Skip, or answer does not match the field type")
         lines.append("NOT APPROVED (staged text discarded, do not post): " + ", ".join(declined)
-                     + (". Problems: " + " | ".join(probs) if probs else ""))
+                     + ". Reason: " + reason)
     if editing:
         lines.append("EDIT REQUESTED: " + ", ".join(editing)
                      + ". Ask the human for replacement text using a separate ask_user "

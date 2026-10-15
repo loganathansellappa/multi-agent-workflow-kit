@@ -257,6 +257,37 @@ class ApprovalTests(GateTestBase):
             self.runtime_answer(token, "true", sessionLog=log.replace("{token}", token))
             self.assertDenied(self.shell("s1", self.reply_cmd(token)))
 
+    def test_single_field_short_cli_response_is_bound_to_invocation(self):
+        for value in ("post", "edit", "skip", "post something else", "Post", "true"):
+            token = self.stage("s1", kind="inline", path="src/a.cpp", line=169)
+            args = self.choice_args(token)
+            self.assertAllowed(self.pre("s1", "ask_user", args))
+            out = self.run_hook("post", {
+                "sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+                "toolResult": {"textResultForLlm": f"User responded: {value}",
+                               "resultType": "success",
+                               "toolTelemetry": {"properties": {"elicitation_action": "accept"}}}})
+            ok, _ = self.gate.verify_grant(token, SLUG, PR, "inline",
+                                             path="src/a.cpp", line=169)
+            self.assertEqual(ok, value == "post")
+            if value != "post":
+                self.assertIn("Reason:", out["additionalContext"])
+            if value == "edit":
+                self.assertIn("EDIT REQUESTED", out["additionalContext"])
+
+    def test_batch_short_response_cannot_authorize_any_token(self):
+        tokens = [self.stage("s1") for _ in range(2)]
+        args = {"message": "\n".join(f"PR_POST_APPROVAL {t}\n{GOOD}" for t in tokens),
+                "requestedSchema": {"properties": {
+                    f"post_{t}": {"type": "string", "enum": ["post", "edit", "skip"]}
+                    for t in tokens}}}
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        out = self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user",
+            "toolArgs": args, "toolResult": {"textResultForLlm": "User responded: post"}})
+        self.assertIn("missing or malformed token-bound answer", out["additionalContext"])
+        for token in tokens:
+            self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
     def test_cancellation_or_failed_result_never_approves(self):
         for overrides in (
             {"toolTelemetry": {"properties": {"elicitation_action": "cancel"}}},

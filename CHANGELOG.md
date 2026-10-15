@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.20.2] - 2026-10-15
+
+### Fixed
+- Accept exact short CLI answers only for a validated single-token approval form
+  when no detailed session log is provided. A malformed detailed log, batch
+  response, cancellation or freeform text still fails closed.
+- Include an explicit reason when an approval result is rejected.
+
 ## [1.20.1] - 2026-10-15
 
 ### Fixed
