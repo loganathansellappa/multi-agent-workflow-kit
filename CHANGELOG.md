@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.19.1] - 2026-10-15
+
+### Fixed
+- Read token-bound approval answers from the CLI's `toolResult.sessionLog`
+  (`post_<token>: true` or `post`), not its shortened display text. Legacy
+  equals-delimited answers remain supported. Missing, malformed, duplicate,
+  cancelled and failed responses never approve posting.
+- Regression fixtures cover actual CLI hook response shapes for approval,
+  editing and multi-field decisions.
+
 ## [1.19.0] - 2026-10-15
 
 ### Added

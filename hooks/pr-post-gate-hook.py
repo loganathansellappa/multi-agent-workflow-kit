@@ -570,8 +570,11 @@ def parse_answers(result_text):
     if not result_text.startswith("User responded:"):
         return None
     answers = {}
-    for token, value in re.findall(r"(?:^|[,\n])\s*post_(" + TOKEN_RE + r")=([^,\n]*)",
-                                   result_text[len("User responded:"):]):
+    for entry in re.split(r"[,\n]", result_text[len("User responded:"):].strip()):
+        match = re.fullmatch(r"\s*post_(" + TOKEN_RE + r")\s*[:=]\s*([^,\n]*)", entry)
+        if not match:
+            return None
+        token, value = match.groups()
         if token in answers:
             return None
         answers[token] = value.strip()
@@ -693,7 +696,12 @@ def handle_post(payload):
     tokens, probs = approval_request_problems(args, sid)
     if not tokens:
         allow()
-    answers = parse_answers(text)
+    # The CLI's short response drops field names; sessionLog retains their binding.
+    answer_text = res.get("sessionLog", res.get("session_log", text))
+    action = ((res.get("toolTelemetry") or {}).get("properties") or {}).get("elicitation_action")
+    valid_result = res.get("resultType", "success") == "success" \
+        and action in (None, "accept")
+    answers = parse_answers(answer_text) if valid_result and isinstance(answer_text, str) else None
     approved, declined, editing = [], [], []
     for t in tokens:
         field = ((args.get("requestedSchema") or {}).get("properties") or {}).get(f"post_{t}") or {}

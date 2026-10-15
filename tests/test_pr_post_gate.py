@@ -212,6 +212,65 @@ class ApprovalTests(GateTestBase):
     def test_post_without_approval_flag_denied(self):
         self.assertDenied(self.shell("s1", f"{PRC} reply --slug {SLUG} --pr 7 --comment 42"))
 
+    def runtime_answer(self, token, answer, choice=False, **overrides):
+        args = self.choice_args(token) if choice else self.ask_args(token)
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        result = {"textResultForLlm": f"User responded: {answer}",
+                  "sessionLog": f"User responded:\npost_{token}: {answer}",
+                  "resultType": "success",
+                  "toolTelemetry": {"properties": {"elicitation_action": "accept"}}}
+        result.update(overrides)
+        return self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user",
+                                     "toolArgs": args, "toolResult": result})
+
+    def test_real_cli_session_log_boolean_approval(self):
+        token = self.stage("s1")
+        out = self.runtime_answer(token, "true")
+        self.assertIn(f"APPROVED {token}", out["additionalContext"])
+        self.assertAllowed(self.shell("s1", self.reply_cmd(token)))
+
+    def test_real_cli_session_log_post_and_edit_choices(self):
+        token = self.stage("s1")
+        self.runtime_answer(token, "post", choice=True)
+        self.assertAllowed(self.shell("s1", self.reply_cmd(token)))
+        token = self.stage("s1")
+        out = self.runtime_answer(token, "edit", choice=True)
+        self.assertIn("EDIT REQUESTED", out["additionalContext"])
+        self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_session_log_is_authoritative_and_requires_exact_binding(self):
+        for log in ("User responded:\npost_OTHER: true", "", "User responded: true",
+                    "User responded:\npost_{token}: true but edit first",
+                    "User responded:\npost_{token}: true\npost_{token}: false",
+                    "User responded:\npost_{token}: true\nunexpected: value",
+                    "User responded:\npost_{token}: false"):
+            token = self.stage("s1")
+            self.runtime_answer(token, "true", sessionLog=log.replace("{token}", token))
+            self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_cancellation_or_failed_result_never_approves(self):
+        for overrides in (
+            {"toolTelemetry": {"properties": {"elicitation_action": "cancel"}}},
+            {"toolTelemetry": {"properties": {"elicitation_action": "decline"}}},
+            {"resultType": "failure"},
+        ):
+            token = self.stage("s1")
+            self.runtime_answer(token, "true", **overrides)
+            self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_multifield_colon_log_preserves_individual_decisions(self):
+        tokens = [self.stage("s1") for _ in range(2)]
+        args = {"message": "\n".join(f"PR_POST_APPROVAL {t}\n{GOOD}" for t in tokens),
+                "requestedSchema": {"properties": {f"post_{t}": {"type": "boolean"}
+                                                   for t in tokens}}}
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+                              "toolResult": {"textResultForLlm": "User responded: true, false",
+                                             "sessionLog": f"User responded:\npost_{tokens[0]}: true\n"
+                                                           f"post_{tokens[1]}: false"}})
+        self.assertAllowed(self.shell("s1", self.reply_cmd(tokens[0])))
+        self.assertDenied(self.shell("s1", self.reply_cmd(tokens[1])))
+
     def test_staged_token_alone_is_not_approval(self):
         token = self.stage("s1")
         self.assertDenied(self.shell("s1", self.reply_cmd(token)), "approval grant")
