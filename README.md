@@ -469,13 +469,20 @@ https://bb.example.com/projects/API/repos/api-service/pull-requests/88/overview"
 
 PR references are resolved read only by `pr_comments.py pr-info` (source, target, head, service). The
 repo slug must be listed under `bitbucket.repositories` in `agents.config.yaml` with its `service`. Add
-`--post-comments=true` to any of them to enable staged, approved posting.
+`--post-comments=true` inside the prompt to enable staged, approved posting, and
+use `-i` rather than `--prompt` so the approval form is available:
+
+```powershell
+copilot --agent review-orchestrator --allow-all -i "serviceA: 4521 --post-comments=true"
+```
 
 Opt-in unlocks staging plus approval, never automatic posting. For each comment the agent stages the
 humanized text (no hyphens, no semicolons, slophound clean), then shows you an `ask_user` form with
-`PR_POST_APPROVAL <token>` and the exact text. Only your `true` makes the `pr-post-gate` hook mint a
-one-use grant for that exact PR, target and text; the agent then posts it once. Saying no, cancelling,
-editing the text or changing the target means nothing posts. Under `-p` there is no `ask_user`, so
+`PR_POST_APPROVAL <token>` and the exact text, with **Post / Edit text / Skip** choices.
+Only **Post** makes the `pr-post-gate` hook mint a one-use grant for that exact PR, target and text;
+the agent then posts it once. **Edit text** discards the old stage and asks for your own wording.
+The replacement passes the same checks, then needs fresh approval before posting.
+**Skip** or cancellation posts nothing. Under `-p` there is no `ask_user`, so
 nothing can be approved or posted. Edits, commits, pushes and merges stay denied for the whole review.
 Watch the walkthrough in [`docs/pr-post-gate/`](docs/pr-post-gate/).
 

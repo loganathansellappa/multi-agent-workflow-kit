@@ -22,7 +22,7 @@ the CLI runs on its own, so it applies policy without the agent's cooperation
 | `push-guard-hook.py` | `preToolUse` handler that **blocks `git push` to a protected branch** (main/master, plus any configured `baseBranch`) at the tool layer. This is the *enforcement* half of the `git-push-guard` skill. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** (fail-open defense-in-depth): (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
 | `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize + grounding gates** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, denies `--no-lint` / `--no-ground`, and denies `pr_comments.py reply`/`comment` without `--approval`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
-| `pr-post-gate-hook.py` | Global `preToolUse` (all tools) + `postToolUse` (`ask_user`, shell) + `userPromptSubmitted`, plus agent-scoped `review-prompt`/`review-pre` modes declared in `review-orchestrator`'s frontmatter. **Deterministic, fail-closed PR comment gate**: posting from a review is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant bound to session + PR + target + text hash that the hook mints only after the user answered `true` in an `ask_user` form showing the exact staged text; text must be humanized, have no hyphen/dash or semicolon outside `code`, and pass slophound (missing slophound = deny). Denies `gh`/`glab` comment commands, MCP comment tools, raw HTTP comment writes, `pr_comments` internals and approval-state access. Keeps review sessions (and every subagent they spawn) read-only: no edits, commits, pushes, merges, resolve/delete. Tests: `tests/test_pr_post_gate.py`. |
+| `pr-post-gate-hook.py` | Global `preToolUse` (all tools) + `postToolUse` (`ask_user`, shell) + `userPromptSubmitted`, plus agent-scoped `review-prompt`/`review-pre` modes declared in `review-orchestrator`'s frontmatter. **Deterministic, fail-closed PR comment gate**: posting from a review is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant bound to session + PR + target + text hash that the hook mints only after the user selected Post (or `true` in a legacy boolean form) showing the exact staged text. Edit text requires restaging and fresh approval. Text must be humanized, have no hyphen/dash or semicolon outside `code`, and pass slophound (missing slophound = deny). Denies `gh`/`glab` comment commands, MCP comment tools, raw HTTP comment writes, `pr_comments` internals and approval-state access. Keeps review sessions (and every subagent they spawn) read-only: no edits, commits, pushes, merges, resolve/delete. Tests: `tests/test_pr_post_gate.py`. |
 | `hooks.example.json` | The hook registration the CLI reads. Copy it to `~/.copilot/hooks/`. |
 
 ## Why the shell-guard hook exists
@@ -83,8 +83,13 @@ text, an agent can approve itself. The gate moves the decision to the tool layer
 1. `pr_comments.py stage` humanizes and checks the text and prints `APPROVAL_TOKEN=<t>`.
    The token authorises nothing.
 2. The agent calls `ask_user` with `PR_POST_APPROVAL <t>`, the exact text, and only a
-   boolean `post_<t>` field with no default. `preToolUse` rejects malformed forms.
-3. `postToolUse` reads the real answer. Only `post_<t>=true` mints the grant.
+   string `post_<t>` field with enum `["post", "edit", "skip"]`, enumNames
+   `["Post", "Edit text", "Skip"]` and no default. `preToolUse` rejects malformed forms.
+3. `postToolUse` reads the real answer. Only `post_<t>=post` mints the grant.
+   Edit text discards the stage without granting permission. Collect replacement
+   wording in a separate free-text form, then stage and approve it with a new token
+   for the same PR/target. Skip, cancellation and unrecognised responses never post.
+   Legacy boolean forms remain supported with an exact `true` answer.
 4. `reply`/`comment --approval <t>` is checked by the hook and the grant is consumed
    atomically by `pr_comments.py` (replays are refused through a used-token ledger).
 

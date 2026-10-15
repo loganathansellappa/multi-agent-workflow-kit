@@ -16,8 +16,9 @@ Posting is approval-gated and enforced by ~/.copilot/hooks/pr-post-gate-hook.py:
              closed if slophound is missing), runs the grounding preflight and
              prints APPROVAL_TOKEN=<t>. The token alone authorises nothing.
   2. ask_user must show the exact staged text plus the line `PR_POST_APPROVAL <t>`
-             and a boolean field `post_<t>` with no default. The hook mints a
-             signed, one-use, target-bound grant only when the user answers true.
+             and a string field `post_<t>` with enum [post, edit, skip], no default.
+             The hook mints a
+             signed, one-use, target-bound grant only when the user selects Post.
   3. reply/comment --approval <t> atomically consumes that grant, re-checks the
              text and posts exactly the staged text.
 The grounding preflight (run at stage, before the user is asked): the body must be
@@ -455,8 +456,11 @@ def cmd_stage(bb, cfg, args):
         f"Next: call ask_user with a message that contains the line\n"
         f"  PR_POST_APPROVAL {token}\n"
         f"followed by the final text below copied character for character, and a\n"
-        f"requestedSchema with ONLY a boolean field `post_{token}` (no default).\n"
-        f"The pr-post-gate hook mints a one-use grant only if the user answers true.\n")
+        f"requestedSchema with ONLY a string field `post_{token}` (no default),\n"
+        f"enum [\"post\", \"edit\", \"skip\"] and enumNames [\"Post\", \"Edit text\", \"Skip\"].\n"
+        f"Only post approves. On edit, collect replacement text in a separate ask_user,\n"
+        f"then stage it for the same PR and target and request fresh exact-text approval.\n"
+        f"The pr-post-gate hook mints a one-use grant only if the user selects Post.\n")
     print(f"APPROVAL_TOKEN={token}")
     print("--- final text (copy exactly into ask_user) ---")
     print(final)

@@ -21,7 +21,9 @@ WHAT THIS ENFORCES
    Opt-in enables staging + approval only. Nothing is ever posted automatically.
 2. Every PR comment (any session) needs a one-use, target-bound GRANT that only this
    hook mints, and only after it has seen, in postToolUse, that the user answered an
-   `ask_user` form that showed the exact staged text and returned `post_<token>=true`.
+   `ask_user` form that showed the exact staged text and returned `post_<token>=post`
+   (or `true` for legacy boolean forms). Edit and Skip never mint a grant.
+   Editing discards the old stage; replacement text must be staged and approved again.
    `stage` alone no longer authorises anything. Grants are HMAC-signed, bound to
    slug/PR/kind/comment/path/line/text hash/session, expire after 15 min, and are
    consumed atomically by pr_comments.py (replay is refused via a used-token ledger).
@@ -538,8 +540,11 @@ def approval_request_problems(args, sid):
                      "--post-comments=true in the prompt")
     for t in tokens:
         f = props.get(f"post_{t}")
-        if not isinstance(f, dict) or f.get("type") != "boolean":
-            probs.append(f"field post_{t} must exist and be type boolean")
+        choice = isinstance(f, dict) and f.get("type") == "string" \
+            and f.get("enum") == ["post", "edit", "skip"] and "oneOf" not in f
+        if not isinstance(f, dict) or (f.get("type") != "boolean" and not choice):
+            probs.append(f"field post_{t} must be boolean or a string with "
+                         "enum [post, edit, skip]")
         elif "default" in f:
             probs.append(f"field post_{t} must not have a default (the human must choose)")
         rec, why = staged_rec(t)
@@ -564,8 +569,13 @@ def approval_request_problems(args, sid):
 def parse_answers(result_text):
     if not result_text.startswith("User responded:"):
         return None
-    return {k: v.lower() == "true" for k, v in re.findall(r"post_(" + TOKEN_RE + r")=(true|false)",
-                                                          result_text, re.I)}
+    answers = {}
+    for token, value in re.findall(r"(?:^|[,\n])\s*post_(" + TOKEN_RE + r")=([^,\n]*)",
+                                   result_text[len("User responded:"):]):
+        if token in answers:
+            return None
+        answers[token] = value.strip()
+    return answers
 
 
 # ---------------------------------------------------------------- handlers
@@ -684,10 +694,15 @@ def handle_post(payload):
     if not tokens:
         allow()
     answers = parse_answers(text)
-    approved, declined = [], []
+    approved, declined, editing = [], [], []
     for t in tokens:
-        if probs or not answers or not answers.get(t):
+        field = ((args.get("requestedSchema") or {}).get("properties") or {}).get(f"post_{t}") or {}
+        answer = answers.get(t) if answers else None
+        expected = "true" if field.get("type") == "boolean" else "post"
+        if probs or answer != expected:
             declined.append(t)
+            if not probs and field.get("type") == "string" and answer == "edit":
+                editing.append(t)
             continue
         rec, _ = staged_rec(t)
         mint_grant(t, rec, sid)
@@ -710,6 +725,12 @@ def handle_post(payload):
     if declined:
         lines.append("NOT APPROVED (staged text discarded, do not post): " + ", ".join(declined)
                      + (". Problems: " + " | ".join(probs) if probs else ""))
+    if editing:
+        lines.append("EDIT REQUESTED: " + ", ".join(editing)
+                     + ". Ask the human for replacement text using a separate ask_user "
+                     "free-text field without PR_POST_APPROVAL. Then stage the replacement "
+                     "for the same PR and target. It must pass humanizing and slophound, "
+                     "and receive fresh exact-text approval with a new token before posting.")
     _emit({"additionalContext": "pr-post-gate: " + " ".join(lines)})
 
 

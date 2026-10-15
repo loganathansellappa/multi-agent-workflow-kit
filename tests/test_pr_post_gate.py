@@ -254,6 +254,89 @@ class ApprovalTests(GateTestBase):
         self.assertDenied(self.pre("s1", "ask_user", self.ask_args(
             token, extra={"note": {"type": "string"}})), "only contain")
 
+    def choice_args(self, token, text=GOOD):
+        return self.ask_args(token, text, field={
+            "type": "string", "enum": ["post", "edit", "skip"],
+            "enumNames": ["Post", "Edit text", "Skip"]})
+
+    def choose(self, token, value, text=GOOD):
+        args = self.choice_args(token, text)
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        return self.run_hook("post", {
+            "sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+            "toolResult": {"textResultForLlm": f"User responded: post_{token}={value}"}})
+
+    def test_post_choice_mints_one_use_bound_grant(self):
+        token = self.stage("s1")
+        self.assertIn("APPROVED", self.choose(token, "post")["additionalContext"])
+        self.assertAllowed(self.shell("s1", self.reply_cmd(token)))
+        self.assertTrue(self.gate.consume_grant(token, SLUG, PR, "reply", COMMENT)[0])
+        self.assertFalse(self.gate.consume_grant(token, SLUG, PR, "reply", COMMENT)[0])
+
+    def test_edit_discards_stage_and_replacement_needs_fresh_approval(self):
+        token = self.stage("s1")
+        out = self.choose(token, "edit")
+        self.assertIn("EDIT REQUESTED", out["additionalContext"])
+        self.assertFalse((self.approvals / f"{token}.json").exists())
+        self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+        replacement = "Thanks, please check this value."
+        new_token = self.stage("s1", text=replacement)
+        self.assertDenied(self.shell("s1", self.reply_cmd(new_token)))
+        self.assertDenied(self.pre("s1", "ask_user", self.choice_args(new_token)))
+        self.choose(new_token, "post", text=replacement)
+        self.assertAllowed(self.shell("s1", self.reply_cmd(new_token)))
+        self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+        self.assertFalse(self.gate.consume_grant(new_token, SLUG, PR + 1, "reply", COMMENT)[0])
+
+    def test_skip_and_freeform_never_approve(self):
+        for value in ("skip", "please simplify", "post something else", "true", "Post",
+                     "post; edit", "post=false"):
+            token = self.stage("s1")
+            self.choose(token, value)
+            self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_boolean_freeform_prefix_and_duplicate_answers_never_approve(self):
+        for value in ("true but edit first", "trueish", "true\npost_{token}=false"):
+            token = self.stage("s1")
+            self.approve("s1", token, answer=value.replace("{token}", token))
+            self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_choice_schema_requires_exact_values_without_default(self):
+        token = self.stage("s1")
+        for field in (
+            {"type": "string"},
+            {"type": "string", "enum": ["post", "skip"]},
+            {"type": "string", "enum": ["post", "edit", "skip"], "default": "post"},
+        ):
+            self.assertDenied(self.pre("s1", "ask_user", self.ask_args(token, field=field)))
+
+    def test_edit_choice_cannot_bypass_review_opt_in(self):
+        self.user_root("s1", "review PR 7")
+        self.run_hook("review-prompt", {"sessionId": "s1", "prompt": "review PR 7"})
+        token = self.stage("s1")
+        self.assertDenied(self.pre("s1", "ask_user", self.choice_args(token)), "opt in")
+
+    def test_choice_form_still_requires_exact_text_and_comment_rules(self):
+        token = self.stage("s1")
+        self.assertDenied(self.pre("s1", "ask_user", self.choice_args(token, "Different text")))
+        token = self.stage("s1", text="Please change this; thanks.")
+        self.assertDenied(self.pre("s1", "ask_user",
+                                 self.choice_args(token, "Please change this; thanks.")))
+
+    def test_batch_choices_post_only_selected_comment(self):
+        tokens = [self.stage("s1") for _ in range(3)]
+        args = {"message": "\n".join(f"PR_POST_APPROVAL {t}\n{GOOD}" for t in tokens),
+                "requestedSchema": {"properties": {
+                    f"post_{t}": self.choice_args(t)["requestedSchema"]["properties"][f"post_{t}"]
+                    for t in tokens}}}
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+                              "toolResult": {"textResultForLlm": "User responded: " + ", ".join(
+                                  f"post_{t}={a}" for t, a in zip(tokens, ("post", "edit", "skip")))}})
+        self.assertAllowed(self.shell("s1", self.reply_cmd(tokens[0])))
+        for token in tokens[1:]:
+            self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
     def test_token_staged_in_other_session_cannot_be_approved(self):
         self.user_root("s2", "other work")
         token = self.stage("s2")

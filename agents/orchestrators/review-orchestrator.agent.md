@@ -68,10 +68,14 @@ only.
 - Post only through skill `pr-comment-respond` (`pr_comments.py`). Per comment:
   1. `stage` the text. It is humanized and must have no hyphen or dash, no semicolon (outside `code`),
      and pass slophound. If rejected, rewrite plainer and stage again.
-  2. Call `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged text, and ONLY a boolean field
-     `post_<token>` with no default.
-  3. Only if the user answered true, run the post command the hook returns
+  2. Call `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged text, and ONLY a string field
+     `post_<token>` with enum `["post", "edit", "skip"]`, enumNames `["Post", "Edit text", "Skip"]`
+     and no default.
+  3. Only if the user selected Post, run the post command the hook returns
      (`reply`/`comment --approval <token>`), one comment per shell call.
+  4. Edit text discards the old stage without posting. Ask for replacement wording in a separate
+     free-text ask_user without an approval marker, stage it for the same PR and target, then
+     show the checked text for fresh approval with a new token. Skip posts nothing.
 - Never use `gh`/`glab` comment commands, MCP comment tools, raw HTTP, `resolve` or `delete`. The hook
   denies them, and it also keeps the review read-only (no edits, commits, pushes or merges) even with opt-in.
 - Example: `copilot --agent review-orchestrator --allow-all -i "frontend: feature/login-fix --post-comments=true"`. Use `-i`, not `-p`: approval needs `ask_user`, which non-interactive runs cannot show. Add `--allow-all` so reviewer subagents are not auto-denied.

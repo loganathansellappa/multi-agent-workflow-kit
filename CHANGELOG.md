@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.19.0] - 2026-10-15
+
+### Added
+- PR comment/reply approval now offers Post, Edit text and Skip. Editing discards
+  the stage without posting, collects replacement wording and requires fresh
+  humanizing, grounding, slophound and exact-text approval for the same PR/target.
+  Legacy boolean approval forms remain compatible.
+- Negative tests cover editing, skipping, freeform answers, malformed forms,
+  missing opt-in, fresh approval and mixed batch decisions.
+
+### Fixed
+- Approval answer parsing rejects partial values and duplicate keys rather than
+  accepting a `true` prefix in a freeform response.
+
 ## [1.18.0] - 2026-10-15
 
 ### Added

@@ -31,18 +31,27 @@ python <skilldir>/pr_comments.py resolve  --slug <slug> --pr <id> --comment <cid
 python <skilldir>/pr_comments.py humanize --text "..."        # sanitize + rule-check only
 ```
 
-**Posting is two steps and needs the human's explicit yes (hook-enforced).**
+**Posting needs the human's exact-text approval (hook-enforced).**
 `stage` humanizes the text, applies the comment rules, runs the grounding preflight
 (below), and prints `APPROVAL_TOKEN=<t>` plus the final text. The token alone
 authorises nothing. Then call `ask_user` with a message that contains the line
 `PR_POST_APPROVAL <t>` followed by the final text copied character for character, and
-a `requestedSchema` with ONLY a boolean field `post_<t>` and no default. When the user
-answers true, `hooks/pr-post-gate-hook.py` mints a signed grant that is one-use, bound
+a `requestedSchema` with ONLY a string field `post_<t>`, enum `["post", "edit", "skip"]`,
+enumNames `["Post", "Edit text", "Skip"]` and no default. When the user selects Post,
+`hooks/pr-post-gate-hook.py` mints a signed grant that is one-use, bound
 to this session and to the exact slug / PR / target / text, and valid for 15 minutes.
 Only then run `reply` / `comment --approval <t>` (one post per shell call). Changing
 the text or the target means staging again. Text can be piped on stdin instead of
 `--text`. The slugs are the ones you list under the host block in your own config:
 nothing is hard-coded here.
+
+**Edit text** discards the old stage and never grants posting permission. Ask for
+replacement wording using a separate `ask_user` free-text field without
+`PR_POST_APPROVAL`. Stage it for the same slug, PR and reply/inline target. Humanizing,
+grounding and slophound run again. Show the checked text with a NEW token for fresh
+Post/Edit text/Skip approval. Skip, cancellation or unrecognised/freeform answers
+post nothing. Legacy boolean forms remain supported, but new forms must offer
+Edit text. Never add custom text fields to an approval form.
 
 **Comment rules (deterministic, checked at stage AND at post):** no hyphen or dash of
 any kind and no semicolon (inside `inline code` both are fine), and slophound must pass.
@@ -93,8 +102,9 @@ Use when the user wants existing reviewer comments on their PR addressed.
    `<baseBranch>` or any protected branch: run skill `git-push-guard` first and stop
    on BLOCKED.
 7. For each reply: `pr_comments.py stage ... --comment <cid> --text "<human reply>"`,
-   approve it through `ask_user` (`PR_POST_APPROVAL <token>`, exact text, boolean
-   `post_<token>`), then `pr_comments.py reply ... --approval <token>`. Then
+   approve it through `ask_user` (`PR_POST_APPROVAL <token>`, exact text, string
+   `post_<token>` with Post/Edit text/Skip choices), then on Post run
+   `pr_comments.py reply ... --approval <token>`. Then
    `resolve` the threads whose fix was pushed. Leave a thread open if its fix was
    not pushed.
 
@@ -111,8 +121,9 @@ Use when the user asks you to review a PR/branch/diff and add your own comments.
 4. **Confirmation gate (mandatory): stage each finding you would post** (inline:
    `stage --path <file> --line <n>`, general: `stage` with no target) and approve
    each one through `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged
-   text, and ONLY a boolean `post_<token>` with no default. Never comment without
-   the user's explicit true for that exact text.
+   text, and ONLY a string `post_<token>` with the exact Post/Edit text/Skip choices
+   above and no default. Edit text requires replacement wording, staging and fresh
+   approval. Never comment without the user's explicit Post for that exact text.
 5. On approval, post each confirmed finding once:
    - inline: `pr_comments.py comment --slug <slug> --pr <id> --path <file> --line <n> --approval <token>`
    - general: `pr_comments.py comment --slug <slug> --pr <id> --approval <token>`
