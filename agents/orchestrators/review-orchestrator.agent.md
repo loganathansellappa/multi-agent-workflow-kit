@@ -74,11 +74,11 @@ only.
      (`reply`/`comment --approval <token>`), one comment per shell call.
 - Never use `gh`/`glab` comment commands, MCP comment tools, raw HTTP, `resolve` or `delete`. The hook
   denies them, and it also keeps the review read-only (no edits, commits, pushes or merges) even with opt-in.
-- Example: `copilot --agent review-orchestrator --prompt "frontend: feature/login-fix --post-comments=true"`.
+- Example: `copilot --agent review-orchestrator --allow-all -i "frontend: feature/login-fix --post-comments=true"`. Use `-i`, not `-p`: approval needs `ask_user`, which non-interactive runs cannot show. Add `--allow-all` so reviewer subagents are not auto-denied.
   Approval needs an interactive session (`ask_user` is unavailable under `-p`), so in `-p` mode nothing posts.
 - PR input examples (posting stays OFF unless the flag is present):
   `copilot --agent review-orchestrator --prompt "frontend: 4521, PR#4522"`
-  `copilot --agent review-orchestrator --prompt "https://bb.example.com/projects/WEB/repos/web-app/pull-requests/4521/overview, https://bb.example.com/projects/API/repos/api-service/pull-requests/88/overview --post-comments=true"`
+  `copilot --agent review-orchestrator --allow-all -i "https://bb.example.com/projects/WEB/repos/web-app/pull-requests/4521/overview, https://bb.example.com/projects/API/repos/api-service/pull-requests/88/overview --post-comments=true"`
 
 ## Definition of done
 
