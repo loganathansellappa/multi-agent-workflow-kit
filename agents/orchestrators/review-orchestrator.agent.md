@@ -28,6 +28,12 @@ only.
    staged/unstaged changes). If the input is a ticket/issue key, treat it as a branch-name search token
    (match remote branches); never query issue trackers/MCP/web to interpret it — this is strictly a
    git-diff review. If there is nothing to compare, say so and stop.
+   **PR references are valid input too:** `service: 4521, PR#4522` lines (bare number or `PR#<n>`, the
+   service picks the repo) and bare PR URLs (`.../repos/<slug>/pull-requests/<n>[/overview]`, comma or
+   newline separated, no service prefix needed). Resolve each one read-only with
+   `python ~/.copilot/skills/pr-comment-respond/pr_comments.py pr-info --pr <ref> [--service <svc>]`, route
+   by its `service`/`reviewerAgent`, and pass the reference unchanged to the reviewer. Flags such as
+   `--post-comments=true` and `--html-report=true` are options, never branch tokens.
 4. **Group the diff by component** using the `services` map in `agents.config.yaml` (path → component).
 5. **Route each group** to the matching reviewer via the `task` tool:
    - general code changes → `code-reviewer`
@@ -70,6 +76,9 @@ only.
   denies them, and it also keeps the review read-only (no edits, commits, pushes or merges) even with opt-in.
 - Example: `copilot --agent review-orchestrator --prompt "frontend: feature/login-fix --post-comments=true"`.
   Approval needs an interactive session (`ask_user` is unavailable under `-p`), so in `-p` mode nothing posts.
+- PR input examples (posting stays OFF unless the flag is present):
+  `copilot --agent review-orchestrator --prompt "frontend: 4521, PR#4522"`
+  `copilot --agent review-orchestrator --prompt "https://bb.example.com/projects/WEB/repos/web-app/pull-requests/4521/overview, https://bb.example.com/projects/API/repos/api-service/pull-requests/88/overview --post-comments=true"`
 
 ## Definition of done
 

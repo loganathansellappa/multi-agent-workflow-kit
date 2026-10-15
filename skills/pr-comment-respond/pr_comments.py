@@ -8,6 +8,7 @@ Subcommands:
   comment  - post a staged NEW review comment (general or inline)
   resolve  - mark a comment thread RESOLVED
   humanize - sanitize + rule-check text only; prints cleaned text
+  pr-info  - read only: source/target branch for a PR number, PR#<n> or PR URL
 
 Posting is approval-gated and enforced by ~/.copilot/hooks/pr-post-gate-hook.py:
   1. stage   humanizes the text, applies the deterministic comment rules (no
@@ -356,6 +357,43 @@ def flatten(comment, anchor, acc, me):
         flatten(child, anchor, acc, me)
 
 
+PR_URL = re.compile(r"/repos/([^/]+)/pull-requests/(\d+)", re.I)
+PR_NUM = re.compile(r"^\s*(?:(?:pr|mr)\s*#?|#|!)?\s*(\d+)\s*$", re.I)
+
+
+def parse_pr_ref(ref):
+    """'4521', 'PR#4521', '#4521' or a .../repos/<slug>/pull-requests/<n> URL -> (slug or None, int)."""
+    m = PR_URL.search(ref or "")
+    if m:
+        return m.group(1), int(m.group(2))
+    m = PR_NUM.match(ref or "")
+    if m:
+        return None, int(m.group(1))
+    sys.exit(f"Not a PR reference: {ref!r}. Use a number, PR#<n> or a PR URL.")
+
+
+def slug_for_service(cfg, service):
+    hits = sorted(s for s, m in cfg["repos"].items() if m.get("service") == service)
+    if len(hits) != 1:
+        sys.exit(f"Service '{service}' maps to {hits or 'no repo'}. Pass --slug instead.")
+    return hits[0]
+
+
+def cmd_pr_info(bb, cfg, args):
+    """Read only: the branches a PR compares, so a reviewer can diff it like a branch."""
+    proj, meta = project_for(cfg, args.slug)
+    d = bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}")
+    src, dst = d.get("fromRef") or {}, d.get("toRef") or {}
+    out = {"source": src.get("displayId"), "target": dst.get("displayId"),
+           "head": src.get("latestCommit"), "state": d.get("state"), "title": d.get("title"),
+           "fork": (src.get("repository") or {}).get("slug") not in (None, args.slug),
+           "slug": args.slug, "pr": int(args.pr), "service": meta.get("service"),
+           "repoPath": meta.get("repoPath"), "reviewerAgent": meta.get("reviewerAgent")}
+    print(json.dumps(out, indent=2))
+    if out["fork"]:
+        sys.stderr.write("NOTE source branch lives in a fork, origin/<source> will not exist.\n")
+
+
 def cmd_list(bb, cfg, args):
     proj, meta = project_for(cfg, args.slug)
     pr = bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}")
@@ -521,6 +559,11 @@ def main():
     nc.add_argument("--line", type=int, help="line number for an inline comment")
     nc.add_argument("--approval", required=True, help="one-use token from `stage`, granted via ask_user")
 
+    pi = sub.add_parser("pr-info", help="read only: source/target branch of a PR (number, PR#<n> or URL)")
+    pi.add_argument("--slug", help="repo slug (optional with --service or a PR URL)")
+    pi.add_argument("--service", help="service key from agents.config.yaml")
+    pi.add_argument("--pr", required=True, help="4521, PR#4521 or the PR URL")
+
     hm = sub.add_parser("humanize", help="sanitize + rule-check text; prints cleaned text")
     hm.add_argument("--text", help="text to check (or pass via stdin)")
 
@@ -535,11 +578,16 @@ def main():
     except Exception:
         pass
     handler = {"list": cmd_list, "stage": cmd_stage, "reply": cmd_reply, "comment": cmd_comment,
-               "humanize": cmd_humanize, "resolve": cmd_resolve}[args.cmd]
+               "humanize": cmd_humanize, "resolve": cmd_resolve, "pr-info": cmd_pr_info}[args.cmd]
     if args.cmd == "humanize":
         handler(None, None, args)
         return
     cfg = load_config(Path(args.config))
+    if args.cmd == "pr-info":
+        url_slug, args.pr = parse_pr_ref(args.pr)
+        args.slug = args.slug or url_slug or (args.service and slug_for_service(cfg, args.service))
+        if not args.slug:
+            sys.exit("pr-info needs --slug, --service or a PR URL.")
     bb = BB(cfg)
     try:
         handler(bb, cfg, args)

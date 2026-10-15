@@ -7,7 +7,9 @@ state, key, network or slophound install is touched.
 Override the files under test with PR_GATE_HOOK / PR_COMMENTS_PY.
 """
 import argparse
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import secrets
@@ -498,6 +500,62 @@ class PrCommentsPostTests(GateTestBase):
             self.prc.stage_text(self.gate, "Fixed it; thanks.")
         self.assertEqual(self.prc.stage_text(self.gate, "Nice catch \u2014 fixed it now."),
                          "Nice catch, fixed it now.")
+
+
+class PrInfoTests(GateTestBase):
+    """PR number / URL input: parsing, service mapping, read-only gate, output shape."""
+
+    def setUp(self):
+        super().setUp()
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            self.skipTest("pyyaml not installed")
+        skill = self.home / "skills" / "pr-comment-respond"
+        skill.mkdir(parents=True)
+        shutil.copy(PRC_SRC, skill / "pr_comments.py")
+        self.prc = _load(skill / "pr_comments.py", "prc_" + secrets.token_hex(4))
+
+    def test_pr_reference_forms(self):
+        p = self.prc.parse_pr_ref
+        for ref in ("4521", "PR#4521", "pr 4521", "#4521", " 4521 "):
+            self.assertEqual(p(ref), (None, 4521), ref)
+        self.assertEqual(p("https://bb/projects/WEB/repos/web-app/pull-requests/812/overview"),
+                         ("web-app", 812))
+
+    def test_non_pr_input_rejected(self):
+        for ref in ("TEAM-4521", "feature-4521", "4521a", ""):
+            with self.assertRaises(SystemExit, msg=ref):
+                self.prc.parse_pr_ref(ref)
+
+    def test_service_must_map_to_exactly_one_repo(self):
+        cfg = {"repos": {"a": {"service": "x"}, "b": {"service": "y"}, "c": {"service": "y"}}}
+        self.assertEqual(self.prc.slug_for_service(cfg, "x"), "a")
+        for svc in ("y", "nope"):
+            with self.assertRaises(SystemExit):
+                self.prc.slug_for_service(cfg, svc)
+
+    def test_pr_info_output(self):
+        class FakeBB:
+            def req(self, method, path):
+                assert method == "GET" and path.endswith("/repos/web-app/pull-requests/7"), path
+                return {"fromRef": {"displayId": "feat/x", "latestCommit": "abc",
+                                    "repository": {"slug": "web-app"}},
+                        "toRef": {"displayId": "main"}, "state": "OPEN", "title": "t"}
+        cfg = {"repos": {"web-app": {"project": "WEB", "service": "frontend",
+                                     "repoPath": "/r", "reviewerAgent": "code-reviewer"}}}
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.prc.cmd_pr_info(FakeBB(), cfg, argparse.Namespace(slug="web-app", pr=7))
+        out = json.loads(buf.getvalue())
+        self.assertEqual((out["source"], out["target"], out["service"], out["fork"]),
+                         ("feat/x", "main", "frontend", False))
+
+    def test_pr_info_allowed_in_read_only_review(self):
+        self.user_root("u1", "review PR 7")
+        self.spawn("u1", "r1", "review-orchestrator", "frontend: 7")
+        self.assertAllowed(self.shell("r1", f"{PRC} pr-info --service frontend --pr 7"))
+        self.assertDenied(self.shell("r1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
 
 
 if __name__ == "__main__":

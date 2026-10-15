@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.18.0] - 2026-10-15
+
+### Added
+- **Review by PR number or PR URL.** `pr_comments.py pr-info` (read only) resolves a bare number, `PR#<n>`,
+  `#<n>` or a `.../repos/<slug>/pull-requests/<n>` URL to its source/target branch, head sha, service and
+  reviewer agent. `review-orchestrator` accepts `service: 4521, PR#4522` lines and bare PR URLs (comma or
+  newline separated, no service prefix needed). `code-reviewer` and `security-reviewer` diff
+  `origin/<target>...origin/<source>` (fetching `head` when the source branch is gone or in a fork). Posting
+  stays OFF unless the human adds `--post-comments=true`.
+- 5 tests in `tests/test_pr_post_gate.py` (`PrInfoTests`).
+
 ## [1.17.0] - 2026-10-15
 
 ### Added

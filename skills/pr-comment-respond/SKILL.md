@@ -23,6 +23,7 @@ its `service` (and from there to `repoPath`, `baseBranch`, and the owning
 
 ```
 python <skilldir>/pr_comments.py list     --slug <slug> --pr <id> [--all]
+python <skilldir>/pr_comments.py pr-info  [--slug <slug> | --service <svc>] --pr <4521|PR#4521|url>  # read only
 python <skilldir>/pr_comments.py stage    --slug <slug> --pr <id> [--comment <cid> | --path F --line N] --text "..."
 python <skilldir>/pr_comments.py reply    --slug <slug> --pr <id> --comment <cid> --approval <token>
 python <skilldir>/pr_comments.py comment  --slug <slug> --pr <id> [--path F --line N] --approval <token>

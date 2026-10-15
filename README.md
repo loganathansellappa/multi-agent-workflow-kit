@@ -458,6 +458,19 @@ copilot --agent review-orchestrator
 > serviceA: feature/login-fix --post-comments=true
 ```
 
+You can also point it at PRs instead of branches. Every line below is review only, nothing is posted:
+
+```bash
+copilot --agent review-orchestrator --prompt "serviceA: 4521"                 # bare PR number + service
+copilot --agent review-orchestrator --prompt "serviceA: PR#4521, PR#4522"     # several PRs, one repo
+copilot --agent review-orchestrator --prompt "https://bb.example.com/projects/WEB/repos/web-app/pull-requests/4521/overview,
+https://bb.example.com/projects/API/repos/api-service/pull-requests/88/overview"   # cross repo, no service needed
+```
+
+PR references are resolved read only by `pr_comments.py pr-info` (source, target, head, service). The
+repo slug must be listed under `bitbucket.repositories` in `agents.config.yaml` with its `service`. Add
+`--post-comments=true` to any of them to enable staged, approved posting.
+
 Opt-in unlocks staging plus approval, never automatic posting. For each comment the agent stages the
 humanized text (no hyphens, no semicolons, slophound clean), then shows you an `ask_user` form with
 `PR_POST_APPROVAL <token>` and the exact text. Only your `true` makes the `pr-post-gate` hook mint a
