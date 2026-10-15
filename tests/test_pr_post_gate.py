@@ -653,8 +653,10 @@ class PrCommentsPostTests(GateTestBase):
                          "Nice catch, fixed it now.")
 
     def test_inline_anchor_requires_a_real_added_or_context_line(self):
+        urls = []
         class Diff:
             def req(self, method, url):
+                urls.append(url)
                 return {"diffs": [{"hunks": [{"segments": [
                     {"type": "REMOVED", "lines": [{"source": 88}]},
                     {"type": "ADDED", "lines": [{"destination": 89}]},
@@ -665,6 +667,12 @@ class PrCommentsPostTests(GateTestBase):
             self.assertEqual(anchor["lineType"], kind)
             self.assertEqual(anchor["line"], line)
             self.assertEqual(anchor["fileType"], "TO")
+        self.assertTrue(all("/diff/conan/conanfile.py?contextLines=3" in url for url in urls))
+        urls.clear()
+        path = "Commons/Some Folder/File#100%.h"
+        anchor = self.prc.bitbucket_anchor(Diff(), "P", SLUG, PR, path, 89)
+        self.assertEqual(anchor["path"], path)
+        self.assertIn("/diff/Commons/Some%20Folder/File%23100%25.h?", urls[0])
         for path, line in ((None, 89), ("a.py", None), ("a.py", -1), ("a.py", 88),
                           ("a.py", 999)):
             with self.assertRaises(SystemExit):

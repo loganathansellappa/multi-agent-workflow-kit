@@ -497,7 +497,7 @@ def bitbucket_anchor(bb, proj, slug, pr, path, line):
     """Validate the current diff location; never degrade a failed anchor to a general comment."""
     require_inline(path, line)
     diff = bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}"
-                       f"/diff/{urllib.parse.quote(path, safe='')}?contextLines=3")
+                       f"/diff/{urllib.parse.quote(path, safe='/')}?contextLines=3")
     for file_diff in diff.get("diffs", []) or []:
         for hunk in file_diff.get("hunks", []) or []:
             for segment in hunk.get("segments", []) or []:
