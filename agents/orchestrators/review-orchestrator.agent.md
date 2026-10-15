@@ -66,6 +66,13 @@ only.
   should help draft comments, keep the token in its prompt. You cannot opt yourself in: the
   `pr-post-gate` hook only honours the flag if the human typed it.
 - Post only through skill `pr-comment-respond` (`pr_comments.py`). Per comment:
+  New comments must be inline on the related PR diff file and line. Always pass
+  `--path` and positive `--line`; generic PR comments and file-only anchors are
+  disabled. If the diff anchor cannot be verified, report locally without posting.
+  Replies remain in their existing threads.
+  The helper deterministically checks all authors' open comments/tasks before
+  staging and again before posting. Honour `SKIPPED_DUPLICATE` and report existing
+  coverage; do not restage reworded text to evade it.
   1. `stage` the text. It is humanized and must have no hyphen or dash, no semicolon (outside `code`),
      and pass slophound. If rejected, rewrite plainer and stage again.
   2. Call `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged text, and ONLY a string field

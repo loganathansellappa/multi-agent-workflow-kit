@@ -26,12 +26,24 @@ python <skilldir>/pr_comments.py list     --slug <slug> --pr <id> [--all]
 python <skilldir>/pr_comments.py pr-info  [--slug <slug> | --service <svc>] --pr <4521|PR#4521|url>  # read only
 python <skilldir>/pr_comments.py stage    --slug <slug> --pr <id> [--comment <cid> | --path F --line N] --text "..."
 python <skilldir>/pr_comments.py reply    --slug <slug> --pr <id> --comment <cid> --approval <token>
-python <skilldir>/pr_comments.py comment  --slug <slug> --pr <id> [--path F --line N] --approval <token>
+python <skilldir>/pr_comments.py comment  --slug <slug> --pr <id> --path F --line N --approval <token>
 python <skilldir>/pr_comments.py resolve  --slug <slug> --pr <id> --comment <cid>
 python <skilldir>/pr_comments.py humanize --text "..."        # sanitize + rule-check only
 ```
 
 **Posting needs the human's exact-text approval (hook-enforced).**
+New comments must be inline on the related PR diff file AND line. Both hook and
+helper reject generic comments and file-only anchors. Supply `--path` and a
+positive `--line`; the helper checks the current Bitbucket diff and selects
+ADDED or CONTEXT line type. Invalid or moved anchors fail without a general
+fallback. Replies stay in their existing threads.
+Duplicate detection is enforced by the helper at staging and again before posting.
+It checks every author's open comments AND tasks on the same nonorphaned file/line.
+Matching uses case/punctuation normalisation, equivalent release reminders, or at
+least four shared words with word-set overlap of 80% or more. Resolved items do
+not suppress new findings. A duplicate returns `SKIPPED_DUPLICATE`; report existing
+coverage, never rewrite to evade it. API failures are errors, not permission to
+post. This is deterministic lexical matching, not universal paraphrase detection.
 `stage` humanizes the text, applies the comment rules, runs the grounding preflight
 (below), and prints `APPROVAL_TOKEN=<t>` plus the final text. The token alone
 authorises nothing. Then call `ask_user` with a message that contains the line
@@ -118,15 +130,15 @@ Use when the user asks you to review a PR/branch/diff and add your own comments.
    changed hunks. Keep findings concrete and code-cited (`file:line`); follow the
    severity/evidence contract in skill `review-findings-output`.
 3. Present the full findings to the user **first**. Post nothing yet.
-4. **Confirmation gate (mandatory): stage each finding you would post** (inline:
-   `stage --path <file> --line <n>`, general: `stage` with no target) and approve
+4. **Confirmation gate (mandatory): stage each finding you would post** with
+   `stage --path <file> --line <n>` and approve
    each one through `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged
    text, and ONLY a string `post_<token>` with the exact Post/Edit text/Skip choices
    above and no default. Edit text requires replacement wording, staging and fresh
    approval. Never comment without the user's explicit Post for that exact text.
 5. On approval, post each confirmed finding once:
    - inline: `pr_comments.py comment --slug <slug> --pr <id> --path <file> --line <n> --approval <token>`
-   - general: `pr_comments.py comment --slug <slug> --pr <id> --approval <token>`
+   Never omit `--path` or `--line` and never fall back to a general comment.
 
 When `review-orchestrator` runs the review, posting is OFF unless the human typed
 `--post-comments=true` inside the prompt. The pr-post-gate hook enforces this and

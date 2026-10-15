@@ -150,27 +150,27 @@ class GateTestBase(unittest.TestCase):
 class OptInTests(GateTestBase):
     def test_non_review_session_can_stage_without_flag(self):
         self.user_root("u1", "please reply to the review comments on my PR")
-        self.assertAllowed(self.shell("u1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
+        self.assertAllowed(self.shell("u1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"))
 
     def test_review_without_opt_in_cannot_stage(self):
         self.user_root("u1", "review PR 7")
         self.spawn("u1", "c1", "review-orchestrator", "review PR 7 in PROJ/repo")
-        self.assertDenied(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"), "OFF")
+        self.assertDenied(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"), "OFF")
 
     def test_flag_injected_by_agent_into_task_prompt_is_ignored(self):
         self.user_root("u1", "review PR 7")
         self.spawn("u1", "c1", "review-orchestrator", "review PR 7 --post-comments=true")
-        self.assertDenied(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
+        self.assertDenied(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"))
 
     def test_flag_dropped_from_task_prompt_stays_off(self):
         self.user_root("u1", "review PR 7 --post-comments=true")
         self.spawn("u1", "c1", "review-orchestrator", "review PR 7")
-        self.assertDenied(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
+        self.assertDenied(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"))
 
     def test_user_opt_in_enables_staging_only(self):
         self.user_root("u1", "review PR 7 --post-comments=true")
         self.spawn("u1", "c1", "review-orchestrator", "review PR 7 --post-comments=true")
-        self.assertAllowed(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
+        self.assertAllowed(self.shell("c1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"))
         token = self.stage("c1")
         self.assertDenied(self.shell("c1", self.reply_cmd(token)), "approval grant")
 
@@ -178,7 +178,7 @@ class OptInTests(GateTestBase):
         self.user_root("u1", "review PR 7")
         self.spawn("u1", "c1", "review-orchestrator", "review PR 7")
         self.spawn("c1", "g1", "general-purpose", "look at file x for PR 7")
-        self.assertDenied(self.shell("g1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
+        self.assertDenied(self.shell("g1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"))
         self.assertDenied(self.shell("g1", "git commit -m x"))
 
     def test_similar_flag_values_do_not_opt_in(self):
@@ -186,16 +186,16 @@ class OptInTests(GateTestBase):
                   "--post-comments=truely"):
             self.user_root("r_" + p, f"review PR 7 {p}")
             self.run_hook("review-prompt", {"sessionId": "r_" + p, "prompt": f"review PR 7 {p}"})
-            out = self.shell("r_" + p, f"{PRC} stage --slug {SLUG} --pr 7 --text hi", mode="review-pre")
+            out = self.shell("r_" + p, f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi", mode="review-pre")
             self.assertDenied(out)
 
     def test_top_level_orchestrator_scoped_hooks(self):
         self.user_root("t1", "review PR 7")
         self.run_hook("review-prompt", {"sessionId": "t1", "prompt": "review PR 7"})
-        self.assertDenied(self.shell("t1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi", "review-pre"))
+        self.assertDenied(self.shell("t1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi", "review-pre"))
         self.user_root("t2", "review PR 7 --post-comments=true")
         self.run_hook("review-prompt", {"sessionId": "t2", "prompt": "review PR 7 --post-comments=true"})
-        self.assertAllowed(self.shell("t2", f"{PRC} stage --slug {SLUG} --pr 7 --text hi", "review-pre"))
+        self.assertAllowed(self.shell("t2", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi", "review-pre"))
 
     def test_ask_user_in_review_without_opt_in_denied(self):
         self.user_root("u1", "review PR 7")
@@ -211,6 +211,15 @@ class ApprovalTests(GateTestBase):
 
     def test_post_without_approval_flag_denied(self):
         self.assertDenied(self.shell("s1", f"{PRC} reply --slug {SLUG} --pr 7 --comment 42"))
+
+    def test_generic_and_file_only_comments_are_denied(self):
+        for target in ("", "--path src/a.cpp", "--path src/a.cpp --line 0",
+                       "--path src/a.cpp --line -1"):
+            self.assertDenied(self.shell("s1", f"{PRC} stage --slug {SLUG} --pr 7 {target} --text hi"))
+            self.assertDenied(self.shell("s1", f"{PRC} comment --slug {SLUG} --pr 7 {target} "
+                                         f"--approval {'a' * 24}"))
+        token = self.stage("s1", kind="general")
+        self.assertDenied(self.pre("s1", "ask_user", self.ask_args(token)), "generic")
 
     def runtime_answer(self, token, answer, choice=False, **overrides):
         args = self.choice_args(token) if choice else self.ask_args(token)
@@ -428,7 +437,7 @@ class ApprovalTests(GateTestBase):
         self.assertDenied(self.shell("s1", self.reply_cmd(token, comment="99")), "different")
         self.assertDenied(self.shell("s1", self.reply_cmd(token, pr=8)), "different")
         self.assertDenied(self.shell("s1", self.reply_cmd(token, slug="PROJ/other")), "different")
-        self.assertDenied(self.shell("s1", f"{PRC} comment --slug {SLUG} --pr 7 --approval {token}"),
+        self.assertDenied(self.shell("s1", f"{PRC} comment --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --approval {token}"),
                           "different")
 
     def test_inline_line_mismatch_denied(self):
@@ -643,6 +652,104 @@ class PrCommentsPostTests(GateTestBase):
         self.assertEqual(self.prc.stage_text(self.gate, "Nice catch \u2014 fixed it now."),
                          "Nice catch, fixed it now.")
 
+    def test_inline_anchor_requires_a_real_added_or_context_line(self):
+        class Diff:
+            def req(self, method, url):
+                return {"diffs": [{"hunks": [{"segments": [
+                    {"type": "REMOVED", "lines": [{"source": 88}]},
+                    {"type": "ADDED", "lines": [{"destination": 89}]},
+                    {"type": "CONTEXT", "lines": [{"destination": 90}]},
+                ]}]}]}
+        for line, kind in ((89, "ADDED"), (90, "CONTEXT")):
+            anchor = self.prc.bitbucket_anchor(Diff(), "P", SLUG, PR, "conan/conanfile.py", line)
+            self.assertEqual(anchor["lineType"], kind)
+            self.assertEqual(anchor["line"], line)
+            self.assertEqual(anchor["fileType"], "TO")
+        for path, line in ((None, 89), ("a.py", None), ("a.py", -1), ("a.py", 88),
+                          ("a.py", 999)):
+            with self.assertRaises(SystemExit):
+                self.prc.bitbucket_anchor(Diff(), "P", SLUG, PR, path, line)
+
+    def test_duplicate_matching_is_line_specific_and_deterministic(self):
+        item = {"id": 8, "path": "a.cpp", "line": 9,
+                "text": "Switch packages to stable before merge"}
+        wanted = "Please update the dependency to a stable release before merging."
+        self.assertIsNotNone(self.prc.duplicate_item([item], "a.cpp", 9, wanted))
+        self.assertIsNone(self.prc.duplicate_item([item], "b.cpp", 9, wanted))
+        self.assertIsNone(self.prc.duplicate_item([item], "a.cpp", 10, wanted))
+        self.assertIsNone(self.prc.duplicate_item([item], "a.cpp", 9, "Check for null before reading"))
+        self.assertIsNone(self.prc.duplicate_item([{**item, "orphaned": True}], "a.cpp", 9, wanted))
+        self.assertTrue(self.prc.similar_text("Check the pointer before reading this value.",
+                                              "Check the pointer before reading this value!"))
+        self.assertTrue(self.prc.similar_text("Please check the pointer before reading this value",
+                                              "Check the pointer before reading this value"))
+        self.assertFalse(self.prc.similar_text("", wanted))
+
+    def test_duplicate_reader_excludes_resolved_threads_and_keeps_nested_anchors(self):
+        bb = argparse.Namespace(paged=lambda path: [
+            {"action": "COMMENTED", "commentAnchor": {"path": "a.cpp", "line": 9},
+             "comment": {"id": 1, "state": "RESOLVED", "comments": [
+                 {"id": 2, "text": "Set release versions before merge"}]}},
+            {"action": "COMMENTED", "commentAnchor": {"path": "a.cpp", "line": 9},
+             "comment": {"id": 3, "state": "OPEN", "comments": [
+                 {"id": 4, "text": "Set release versions before merge"},
+                 {"id": 5, "state": "RESOLVED"}]}},
+        ])
+        items = self.prc.open_bitbucket_items(bb, "P", SLUG, PR)
+        self.assertEqual([i["id"] for i in items], [3, 4])
+        self.assertTrue(all((i["path"], i["line"]) == ("a.cpp", 9) for i in items))
+
+    def test_unavailable_duplicate_scan_fails_closed_before_stage_and_post(self):
+        text = "Check the pointer before reading this value."
+        args = argparse.Namespace(slug=SLUG, pr=PR, path="a.cpp", line=9, comment=None, text=text)
+        bb = self.prc.BB.__new__(self.prc.BB)
+        bb.req = lambda method, path, *rest: (
+            {"diffs": [{"hunks": [{"segments": [
+                {"type": "ADDED", "lines": [{"destination": 9}]}]}]}]}
+            if method == "GET" else self.fail("failed duplicate scan must never write"))
+        def unavailable(path):
+            raise ConnectionError("review items unavailable")
+        bb.paged = unavailable
+        meta = {"repos": {SLUG: {"project": "P"}}}
+        with self.assertRaises(ConnectionError):
+            self.prc.cmd_stage(bb, meta, args)
+        token = self.stage("p1", text=text, kind="inline", path="a.cpp", line=9)
+        self.approve("p1", token, text=text)
+        args.approval = token
+        with self.assertRaises(ConnectionError):
+            self.prc.cmd_comment(bb, meta, args)
+        self.assertFalse(self.gate.verify_grant(token, SLUG, PR, "inline",
+                                               path="a.cpp", line=9)[0])
+
+    def test_existing_comment_or_task_skips_stage_and_post_for_any_author(self):
+        text = "Please switch this dependency to a stable release before merging."
+        args = argparse.Namespace(slug=SLUG, pr=PR, path="a.cpp", line=9, comment=None, text=text)
+        meta = {"project": "P", "slug": SLUG, "repos": {SLUG: {"project": "P"}}}
+        bb = self.prc.BB.__new__(self.prc.BB)
+        bb.req = lambda method, path, *rest: (
+            {"diffs": [{"hunks": [{"segments": [
+                {"type": "ADDED", "lines": [{"destination": 9}]}]}]}]}
+            if method == "GET" else self.fail("duplicate must not write to Bitbucket"))
+        for severity, author in (("NORMAL", "someone-else"), ("BLOCKER", "me")):
+            bb.paged = lambda path: [{"action": "COMMENTED",
+                "commentAnchor": {"path": "a.cpp", "line": 9},
+                "comment": {"id": 8, "state": "OPEN", "severity": severity,
+                            "author": {"name": author}, "text": "Set release versions before merge"}}]
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.prc.cmd_stage(bb, meta, args)
+            self.assertIn("SKIPPED_DUPLICATE", buf.getvalue())
+            self.assertNotIn("APPROVAL_TOKEN=", buf.getvalue())
+            token = self.stage("p1", text=text, kind="inline", path="a.cpp", line=9)
+            self.approve("p1", token, text=text)
+            args.approval = token
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.prc.cmd_comment(bb, meta, args)
+            self.assertIn("SKIPPED_DUPLICATE", buf.getvalue())
+            self.assertFalse(self.gate.verify_grant(token, SLUG, PR, "inline",
+                                                   path="a.cpp", line=9)[0])
+
 
 class PrInfoTests(GateTestBase):
     """PR number / URL input: parsing, service mapping, read-only gate, output shape."""
@@ -697,7 +804,7 @@ class PrInfoTests(GateTestBase):
         self.user_root("u1", "review PR 7")
         self.spawn("u1", "r1", "review-orchestrator", "frontend: 7")
         self.assertAllowed(self.shell("r1", f"{PRC} pr-info --service frontend --pr 7"))
-        self.assertDenied(self.shell("r1", f"{PRC} stage --slug {SLUG} --pr 7 --text hi"))
+        self.assertDenied(self.shell("r1", f"{PRC} stage --slug {SLUG} --pr 7 --path src/a.cpp --line 10 --text hi"))
 
 
 if __name__ == "__main__":

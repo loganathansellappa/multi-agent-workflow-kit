@@ -477,6 +477,11 @@ copilot --agent review-orchestrator --allow-all -i "serviceA: 4521 --post-commen
 ```
 
 Opt-in unlocks staging plus approval, never automatic posting. For each comment the agent stages the
+related PR diff file and line; generic comments and file-only anchors are disabled.
+Invalid anchors never fall back to PR-level comments. Replies stay in existing threads.
+The helper checks all authors' open comments/tasks before staging and again before posting.
+Matching existing coverage is skipped rather than duplicated, including your own manual items.
+The agent stages the
 humanized text (no hyphens, no semicolons, slophound clean), then shows you an `ask_user` form with
 `PR_POST_APPROVAL <token>` and the exact text, with **Post / Edit text / Skip** choices.
 Only **Post** makes the `pr-post-gate` hook mint a one-use grant for that exact PR, target and text;

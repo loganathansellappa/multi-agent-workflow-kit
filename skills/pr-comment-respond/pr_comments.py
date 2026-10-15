@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Generic PR review-comment primitives for in-session review responses.
 
+New comments require verified diff anchors. Duplicate checks at staging and posting
+include every author's open comments/tasks; invalid anchors never fall back to a
+generic PR-level comment.
+
 Subcommands:
   list     - print actionable reviewer comments on a PR as JSON
   stage    - humanize + rule-check + grounding-check text, print APPROVAL_TOKEN
   reply    - post a staged reply (requires --approval and the user's approval)
-  comment  - post a staged NEW review comment (general or inline)
+  comment  - post a staged NEW inline review comment
   resolve  - mark a comment thread RESOLVED
   humanize - sanitize + rule-check text only; prints cleaned text
   pr-info  - read only: source/target branch for a PR number, PR#<n> or PR URL
@@ -431,17 +435,100 @@ def stage_text(gate, text: str) -> str:
     return final
 
 
+def require_inline(path, line):
+    if not path or not isinstance(line, int) or isinstance(line, bool) or line < 1:
+        sys.exit("Refused: provide a PR diff file and positive line. Generic posting is disabled.")
+
+
+def open_bitbucket_items(bb, proj, slug, pr):
+    """Read all authors' open comments/tasks, retaining their diff anchors."""
+    items = []
+
+    def walk(comment, anchor):
+        if (comment.get("state") or "").upper() == "RESOLVED":
+            return
+        items.append({"id": comment.get("id"), "text": comment.get("text") or "",
+                      "severity": comment.get("severity"), "path": anchor.get("path"),
+                      "line": anchor.get("line"), "orphaned": anchor.get("orphaned", False)})
+        for child in comment.get("comments", []) or []:
+            walk(child, anchor)
+
+    for activity in bb.paged(
+            f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}/activities"):
+        if activity.get("action") == "COMMENTED" and activity.get("comment"):
+            walk(activity["comment"], activity.get("commentAnchor") or {})
+    return items
+
+
+def release_reminder(text):
+    words = set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+    return bool(words & {"release", "released", "unreleased", "stable", "prerelease", "nonstable"}) \
+        and bool(words & {"merge", "merging", "version", "versions", "package", "packages",
+                          "dependency", "dependencies", "contract", "contracts",
+                          "reference", "references", "publish", "promote", "switch", "bump"})
+
+
+def similar_text(left, right):
+    """Deterministic lexical matching; unrelated concerns on the same line stay distinct."""
+    a = re.findall(r"[a-z0-9]+", (left or "").lower())
+    b = re.findall(r"[a-z0-9]+", (right or "").lower())
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if release_reminder(left) and release_reminder(right):
+        return True
+    common, union = set(a) & set(b), set(a) | set(b)
+    return len(common) >= 4 and len(common) / len(union) >= 0.8
+
+
+def duplicate_item(items, path, line, text):
+    return next((item for item in items
+                 if not item.get("orphaned") and item.get("path") == path
+                 and item.get("line") == line and similar_text(item["text"], text)), None)
+
+
+def duplicate_notice(item):
+    kind = "BLOCKER task" if item.get("severity") == "BLOCKER" else "comment (not a BLOCKER task)"
+    return f"SKIPPED_DUPLICATE: existing {kind} #{item.get('id')} already covers this line."
+
+
+def bitbucket_anchor(bb, proj, slug, pr, path, line):
+    """Validate the current diff location; never degrade a failed anchor to a general comment."""
+    require_inline(path, line)
+    diff = bb.req("GET", f"/rest/api/1.0/projects/{proj}/repos/{slug}/pull-requests/{pr}"
+                       f"/diff/{urllib.parse.quote(path, safe='')}?contextLines=3")
+    for file_diff in diff.get("diffs", []) or []:
+        for hunk in file_diff.get("hunks", []) or []:
+            for segment in hunk.get("segments", []) or []:
+                if segment.get("type") not in ("ADDED", "CONTEXT"):
+                    continue
+                if any(ln.get("destination") == line for ln in segment.get("lines", []) or []):
+                    return {"path": path, "line": line, "lineType": segment["type"],
+                            "fileType": "TO", "diffType": "EFFECTIVE"}
+    sys.exit(f"Refused: {path}:{line} is not an available PR diff line. Nothing was posted.")
+
+
 def cmd_stage(bb, cfg, args):
     gate = load_gate()
     proj, _ = project_for(cfg, args.slug)
     if args.comment is not None:
         kind, target = "reply", {"comment": str(args.comment)}
     elif args.path:
+        require_inline(args.path, args.line)
         kind, target = "inline", {"path": args.path, "line": args.line}
     else:
-        kind, target = "general", {}
+        sys.exit("Refused: new comments need --path and --line. Generic comments are disabled.")
+    if kind == "inline":
+        bitbucket_anchor(bb, proj, args.slug, args.pr, args.path, args.line)
     text = args.text if args.text is not None else sys.stdin.read()
     final = stage_text(gate, text)
+    if kind == "inline":
+        duplicate = duplicate_item(open_bitbucket_items(bb, proj, args.slug, args.pr),
+                                   args.path, args.line, final)
+        if duplicate:
+            print(duplicate_notice(duplicate))
+            return
     preflight(bb, proj, args.slug, args.pr, final, args,
               comment_id=args.comment if kind == "reply" else None,
               extra_files=(args.path,) if args.path else ())
@@ -449,8 +536,7 @@ def cmd_stage(bb, cfg, args):
            "text": final, "hash": _text_hash(final), **target}
     token = _write_approval(rec)
     where = (f"reply to {args.comment}" if kind == "reply"
-             else f"inline {args.path}:{args.line}" if kind == "inline"
-             else "general comment")
+             else f"inline {args.path}:{args.line}")
     sys.stderr.write(
         f"STAGED {kind} on {args.slug} #{args.pr} ({where}). Nothing is approved yet.\n"
         f"Next: call ask_user with a message that contains the line\n"
@@ -492,21 +578,21 @@ def cmd_reply(bb, cfg, args):
 
 
 def cmd_comment(bb, cfg, args):
+    require_inline(args.path, args.line)
     proj, _ = project_for(cfg, args.slug)
-    kind = "inline" if args.path else "general"
-    rec = _post_guarded(args, kind, path=args.path, line=args.line)
-    body = {"text": rec["text"]}
-    if args.path:
-        anchor = {"path": args.path, "diffType": "EFFECTIVE",
-                  "lineType": "CONTEXT", "fileType": "TO"}
-        if args.line is not None:
-            anchor["line"] = args.line
-        body["anchor"] = anchor
+    rec = _post_guarded(args, "inline", path=args.path, line=args.line)
     try:
+        body = {"text": rec["text"], "anchor": bitbucket_anchor(
+            bb, proj, args.slug, args.pr, args.path, args.line)}
+        duplicate = duplicate_item(open_bitbucket_items(bb, proj, args.slug, args.pr),
+                                   args.path, args.line, rec["text"])
+        if duplicate:
+            print(duplicate_notice(duplicate))
+            return
         res = bb.req("POST", f"/rest/api/1.0/projects/{proj}/repos/{args.slug}/pull-requests/{args.pr}/comments", body)
     finally:
         _consume_approval(args.approval)
-    where = f"{args.path}:{args.line}" if args.path else "(general)"
+    where = f"{args.path}:{args.line}"
     print(f"posted comment #{res.get('id')} on PR #{args.pr} @ {where}")
 
 
@@ -559,8 +645,8 @@ def main():
     nc = sub.add_parser("comment", help="post a staged NEW review comment (requires --approval)")
     nc.add_argument("--slug", required=True)
     nc.add_argument("--pr", type=int, required=True)
-    nc.add_argument("--path", help="file path for an inline comment (omit for general)")
-    nc.add_argument("--line", type=int, help="line number for an inline comment")
+    nc.add_argument("--path", required=True, help="related PR diff file")
+    nc.add_argument("--line", type=int, required=True, help="positive PR diff line")
     nc.add_argument("--approval", required=True, help="one-use token from `stage`, granted via ask_user")
 
     pi = sub.add_parser("pr-info", help="read only: source/target branch of a PR (number, PR#<n> or URL)")

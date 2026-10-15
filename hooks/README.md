@@ -76,6 +76,17 @@ cannot positively identify as a bypass is allowed. It also denies a sanctioned
 
 ## Why the pr-post-gate hook exists
 
+New comments require a related PR diff file and positive line. Generic comments
+and file-only anchors are blocked by the hook and helper. The helper verifies
+the Bitbucket diff line and chooses ADDED or CONTEXT; invalid anchors never fall
+back to a general comment. Replies remain in their existing threads.
+
+The helper enforces duplicate checks both before staging and before the write,
+against every author's open comments/tasks at the same nonorphaned file/line.
+Normalised equal wording, equivalent release reminders, or 80% word-set overlap
+with at least four shared words suppress posting. Resolved items do not count.
+API failures are errors, never permission to post a duplicate.
+
 Instructions like "only post after the user says yes" can be skipped or
 self-satisfied. If an approval token is minted at `stage`, before a human sees the
 text, an agent can approve itself. The gate moves the decision to the tool layer:

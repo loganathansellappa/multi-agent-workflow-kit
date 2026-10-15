@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.20.0] - 2026-10-15
+
+### Changed
+- New comments must be inline on a related PR diff file and positive line.
+  The hook and helper reject generic comments and file-only anchors. The helper
+  verifies the Bitbucket diff and uses the actual ADDED or CONTEXT line type.
+  Invalid anchors fail without a PR-level fallback.
+- Replies remain in existing threads. Post/Edit text/Skip, fresh exact-text
+  approval and default-off review posting remain enforced.
+- Deterministic duplicate checks before staging AND before posting include every
+  author's open comments/tasks on the same line. Normalised equal text, release
+  reminders or 80% word-set overlap suppress duplicate comments.
+
 ## [1.19.1] - 2026-10-15
 
 ### Fixed

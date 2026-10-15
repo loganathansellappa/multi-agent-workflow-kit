@@ -30,6 +30,8 @@ WHAT THIS ENFORCES
 3. Comment text rules (deterministic): humanized (humanize() is idempotent on it),
    no hyphen or dash characters and no semicolons outside `code`, and slophound must
    be installed and pass. Missing slophound fails CLOSED.
+   New comments require an explicit diff file and positive line. Generic posting
+   is disabled; failed anchors must never degrade into PR-level comments.
 4. Direct-write bypasses are denied: gh/glab comment commands, MCP comment-writing
    tools, raw HTTP writes to comment endpoints (no exemption for commands that
    merely mention pr_comments.py), importing pr_comments internals, and touching
@@ -512,6 +514,8 @@ def check_post_call(sub, seg, sid):
     if sub == "reply":
         kind, comment = "reply", _flag(seg, "comment")
     else:
+        if not path or not line or not line.isdigit() or int(line) < 1:
+            return "comments require --path and positive --line; generic comments are disabled"
         kind, comment = ("inline" if path else "general"), None
     if line is not None and not line.lstrip("-").isdigit():
         return "--line must be an integer"
@@ -551,6 +555,8 @@ def approval_request_problems(args, sid):
         if not rec:
             probs.append(why)
             continue
+        if rec.get("kind") == "general":
+            probs.append("generic comments are disabled; stage an inline comment with a file and line")
         if token_used(t):
             probs.append(f"token {t} was already used")
         bind = _read_json(STATE / "stages" / f"{t}.json")
@@ -659,6 +665,10 @@ def handle_pre(payload, force_review=False):
                 deny("PR comment posting is OFF for this review. The human must add "
                      "--post-comments=true to the review prompt to enable staging and "
                      "approval. Report findings as text instead.")
+        if sub == "stage" and _flag(seg, "comment") is None:
+            path, line = _flag(seg, "path"), _flag(seg, "line")
+            if not path or not line or not line.isdigit() or int(line) < 1:
+                deny("new comments require --path and positive --line; no generic comment fallback")
         if sub in ("reply", "comment"):
             why = check_post_call(sub, seg, sid)
             if why:

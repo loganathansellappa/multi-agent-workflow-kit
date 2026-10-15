@@ -20,6 +20,11 @@ Edit text discards the old stage and collects your replacement wording. The agen
 stages it for the same PR/target, reruns the text checks and asks for fresh approval.
 Editing alone never posts. Skip or cancellation also posts nothing.
 
+Current helpers require a related diff file and line for every new comment.
+Generic posting is disabled. All authors' open comments/tasks are checked for
+matching coverage before staging and again before posting, so existing manual
+items are not duplicated.
+
 The recorded animation demonstrates the earlier Yes/No form, which is still
 supported. Current comment forms offer Post/Edit text/Skip as described above.
 
