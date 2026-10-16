@@ -139,6 +139,7 @@ Turn metrics from logging into governance:
 Optimize for the fewest tokens that preserve context and quality:
 
 - **Batch** independent tool calls in one turn (parallel reads/searches); don't serialize what can run together.
+- **Scope bulk searches** to relevant source paths and file globs, exclude `.git`, `node_modules`, `build`, `dist`, `vendor`, and gitignored content by default, inspect specific dependency or generated files only when needed as evidence, keep Git commands available
 - **Never re-read** a file already read this session; reference what you have.
 - **Scope validation** to the smallest command that proves the change (targeted build/test/lint over
   full-suite) unless a full run is justified.
