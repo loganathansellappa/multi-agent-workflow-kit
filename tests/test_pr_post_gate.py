@@ -478,6 +478,100 @@ class ApprovalTests(GateTestBase):
         for token in tokens[1:]:
             self.assertDenied(self.shell("s1", self.reply_cmd(token)))
 
+    def selection_form(self, tokens):
+        return {"message": "\n".join(
+            f"Comment {i + 1} on {SLUG} #{PR}, reply to {COMMENT}\nPR_POST_APPROVAL {t}\n{GOOD}"
+            for i, t in enumerate(tokens)),
+            "requestedSchema": {"properties": {"post_comments": {
+                "type": "array", "title": "Select comments to post",
+                "description": "Choose any subset, including all or one, unselected comments are skipped",
+                "items": {"type": "string", "enum": tokens}}}}}
+
+    def test_selection_approves_only_explicit_subset_all_or_single(self):
+        for indices in ((0, 2), (0, 1, 2), (1,), ()):
+            tokens = [self.stage("s1") for _ in range(3)]
+            args = self.selection_form(tokens)
+            self.assertAllowed(self.pre("s1", "ask_user", args))
+            selected = [tokens[i] for i in indices]
+            out = self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user",
+                "toolArgs": args, "toolResult": {
+                    "sessionLog": "User responded:\npost_comments: " + json.dumps(selected),
+                    "resultType": "success",
+                    "toolTelemetry": {"properties": {"elicitation_action": "accept"}}}})
+            for i, token in enumerate(tokens):
+                decision = self.shell("s1", self.reply_cmd(token))
+                if i in indices:
+                    self.assertAllowed(decision)
+                    self.assertIn(f"APPROVED {token}:", out["additionalContext"])
+                    self.assertTrue(self.gate.consume_grant(token, SLUG, PR, "reply", COMMENT)[0])
+                    self.assertFalse(self.gate.consume_grant(token, SLUG, PR, "reply", COMMENT)[0])
+                else:
+                    self.assertDenied(decision)
+
+    def test_selection_rejects_unknown_duplicate_freeform_or_cancelled_answers(self):
+        for answer, action in (('["unknown"]', "accept"), ("post", "accept"),
+                               ("all", "accept"), ("{0}, {0}", "accept"),
+                               ('["{0}"]', "cancel"), ('["{0}"]', "decline")):
+            tokens = [self.stage("s1") for _ in range(2)]
+            args = self.selection_form(tokens)
+            self.assertAllowed(self.pre("s1", "ask_user", args))
+            self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user",
+                "toolArgs": args, "toolResult": {
+                    "sessionLog": "User responded:\npost_comments: " + answer.format(tokens[0]),
+                    "toolTelemetry": {"properties": {"elicitation_action": action}}}})
+            for token in tokens:
+                self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_selection_schema_cannot_hide_text_targets_or_preselect_comments(self):
+        tokens = [self.stage("s1") for _ in range(2)]
+        for mutate in (
+            lambda a: a["requestedSchema"]["properties"]["post_comments"].update(default=tokens),
+            lambda a: a["requestedSchema"]["properties"]["post_comments"].update(minItems=1),
+            lambda a: a["requestedSchema"]["properties"]["post_comments"].update(maxItems=1),
+            lambda a: a["requestedSchema"]["properties"]["post_comments"]["items"].update(enum=["all"]),
+            lambda a: a["requestedSchema"]["properties"]["post_comments"]["items"].update(enum=tokens[::-1]),
+            lambda a: a["requestedSchema"]["properties"].update(other={"type": "string"}),
+            lambda a: a.update(message=a["message"].replace(GOOD, "Different wording")),
+            lambda a: a.update(message=a["message"].replace(f"reply to {COMMENT}", "hidden target")),
+        ):
+            args = self.selection_form(tokens)
+            mutate(args)
+            self.assertDenied(self.pre("s1", "ask_user", args))
+
+    def test_selection_parser_accepts_cli_comma_list_but_not_extra_fields(self):
+        tokens = ["a" * 24, "b" * 24, "c" * 24]
+        self.assertEqual(self.gate.parse_selection(
+            f"User responded:\npost_comments: {tokens[0]}, {tokens[2]}", tokens),
+            {tokens[0]: "post", tokens[1]: "skip", tokens[2]: "post"})
+        self.assertIsNone(self.gate.parse_selection(
+            f"User responded:\npost_comments: {tokens[0]}\nother: post", tokens))
+
+    def test_selection_short_response_binds_only_explicit_tokens_to_sole_field(self):
+        tokens = [self.stage("s1") for _ in range(2)]
+        args = self.selection_form(tokens)
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+            "toolResult": {"textResultForLlm": f"User responded: {tokens[1]}",
+                           "resultType": "success"}})
+        self.assertDenied(self.shell("s1", self.reply_cmd(tokens[0])))
+        self.assertAllowed(self.shell("s1", self.reply_cmd(tokens[1])))
+        for log_key in ("sessionLog", "session_log"):
+            tokens = [self.stage("s1") for _ in range(2)]
+            args = self.selection_form(tokens)
+            self.assertAllowed(self.pre("s1", "ask_user", args))
+            self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+                "toolResult": {"textResultForLlm": f"User responded: {tokens[1]}",
+                               log_key: "User responded:\npost_comments: all",
+                               "resultType": "success"}})
+            for token in tokens:
+                self.assertDenied(self.shell("s1", self.reply_cmd(token)))
+
+    def test_selection_does_not_bypass_opt_in(self):
+        self.user_root("s1", "review PR 7")
+        self.run_hook("review-prompt", {"sessionId": "s1", "prompt": "review PR 7"})
+        tokens = [self.stage("s1") for _ in range(2)]
+        self.assertDenied(self.pre("s1", "ask_user", self.selection_form(tokens)), "opt in")
+
     def test_token_staged_in_other_session_cannot_be_approved(self):
         self.user_root("s2", "other work")
         token = self.stage("s2")

@@ -483,10 +483,16 @@ The helper checks all authors' open comments/tasks before staging and again befo
 Matching existing coverage is skipped rather than duplicated, including your own manual items.
 The agent stages the
 humanized text (no hyphens, no semicolons, slophound clean), then shows you an `ask_user` form with
-`PR_POST_APPROVAL <token>` and the exact text, with **Post / Edit text / Skip** choices.
+`PR_POST_APPROVAL <token>` and the exact text, with **Post / Edit text / Skip** choices for a single comment.
 Only **Post** makes the `pr-post-gate` hook mint a one-use grant for that exact PR, target and text;
 the agent then posts it once. **Edit text** discards the old stage and asks for your own wording.
 The replacement passes the same checks, then needs fresh approval before posting.
+For several staged comments, one selection form shows every exact text, PR and target.
+Its sole `post_comments` array has string items whose enum lists the tokens in marker
+order, with no default or selection limits. Select a subset, all or one. Unselected
+comments are skipped independently. Each selected comment gets its own one-use grant
+and post command. To edit one, use its separate Post/Edit text/Skip form and the
+prefilled editor, then stage and approve the replacement.
 **Skip** or cancellation posts nothing. Under `-p` there is no `ask_user`, so
 nothing can be approved or posted. Edits, commits, pushes and merges stay denied for the whole review.
 Watch the walkthrough in [`docs/pr-post-gate/`](docs/pr-post-gate/).

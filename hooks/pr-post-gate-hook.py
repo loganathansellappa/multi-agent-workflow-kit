@@ -534,7 +534,15 @@ def approval_request_problems(args, sid):
     probs = []
     schema = args.get("requestedSchema") or {}
     props = schema.get("properties") or {}
-    expected = {f"post_{t}" for t in tokens}
+    batch = "post_comments" in props
+    expected = {"post_comments"} if batch else {f"post_{t}" for t in tokens}
+    if batch:
+        field = props["post_comments"]
+        if not isinstance(field, dict) or field.get("type") != "array" or \
+                field.get("items") != {"type": "string", "enum": tokens} or \
+                any(k in field for k in ("default", "minItems", "maxItems")):
+            probs.append("post_comments must be an array with items type string and enum "
+                         "equal to the displayed tokens in order, without defaults or selection limits")
     extra = [k for k in props if k not in expected]
     if extra:
         probs.append(f"approval form may only contain post_<token> fields, found {extra}")
@@ -546,7 +554,9 @@ def approval_request_problems(args, sid):
         f = props.get(f"post_{t}")
         choice = isinstance(f, dict) and f.get("type") == "string" \
             and f.get("enum") == ["post", "edit", "skip"] and "oneOf" not in f
-        if not isinstance(f, dict) or (f.get("type") != "boolean" and not choice):
+        if batch:
+            pass
+        elif not isinstance(f, dict) or (f.get("type") != "boolean" and not choice):
             probs.append(f"field post_{t} must be boolean or a string with "
                          "enum [post, edit, skip]")
         elif "default" in f:
@@ -557,6 +567,15 @@ def approval_request_problems(args, sid):
             continue
         if rec.get("kind") == "general":
             probs.append("generic comments are disabled; stage an inline comment with a file and line")
+        if batch:
+            path, line = rec.get("path"), rec.get("line")
+            if not path or not isinstance(line, int) or isinstance(line, bool) or line < 1:
+                if rec.get("kind") != "reply":
+                    probs.append("approval needs a valid file and line; re-stage it")
+            target = (f"reply to {rec.get('comment')}" if rec.get("kind") == "reply"
+                      else f"{path}:{line}")
+            if target not in msg:
+                probs.append("approval must show the file and line as path:line or reply to <id>")
         if token_used(t):
             probs.append(f"token {t} was already used")
         bind = _read_json(STATE / "stages" / f"{t}.json")
@@ -603,6 +622,29 @@ def parse_answers(result_text):
             return None
         answers[token] = value.strip()
     return answers
+
+
+def parse_selection(result_text, tokens):
+    """Only explicit token selections can approve a multi-comment form."""
+    if not isinstance(result_text, str):
+        return None
+    match = re.fullmatch(r"User responded:\s*post_comments\s*[:=]\s*(.*?)\s*",
+                         result_text, re.S)
+    if not match:
+        return None
+    value = match.group(1)
+    if value.startswith("["):
+        try:
+            selected = json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    else:
+        selected = [part.strip() for part in value.split(",")] if value else []
+    if not isinstance(selected, list) or any(not isinstance(t, str) for t in selected):
+        return None
+    if len(set(selected)) != len(selected) or any(t not in tokens for t in selected):
+        return None
+    return {t: "post" if t in selected else "skip" for t in tokens}
 
 
 # ---------------------------------------------------------------- handlers
@@ -730,10 +772,18 @@ def handle_post(payload):
     valid_result = res.get("resultType", "success") == "success" \
         and action in (None, "accept")
     answers = parse_answers(answer_text) if valid_result and isinstance(answer_text, str) else None
+    batch = "post_comments" in ((args.get("requestedSchema") or {}).get("properties") or {})
+    if batch:
+        answers = parse_selection(answer_text, tokens) if valid_result else None
+        if answers is None and valid_result and "sessionLog" not in res and "session_log" not in res and \
+                text.startswith("User responded:"):
+            answers = parse_selection(
+                "User responded:\npost_comments: " + text[len("User responded:"):].strip(),
+                tokens)
     # A single-field invocation also binds the short CLI response to its sole token.
     # Never substitute it for a present but malformed detailed log or a batch form.
     if valid_result and "sessionLog" not in res and "session_log" not in res and \
-            len(tokens) == 1 and not probs:
+            len(tokens) == 1 and not probs and not batch:
         short = re.fullmatch(r"User responded:\s*(post|edit|skip|true|false)\s*", text)
         if short:
             answers = {tokens[0]: short.group(1)}
@@ -741,7 +791,7 @@ def handle_post(payload):
     for t in tokens:
         field = ((args.get("requestedSchema") or {}).get("properties") or {}).get(f"post_{t}") or {}
         answer = answers.get(t) if answers else None
-        expected = "true" if field.get("type") == "boolean" else "post"
+        expected = "true" if field.get("type") == "boolean" and not batch else "post"
         if probs or answer != expected:
             declined.append(t)
             if not probs and field.get("type") == "string" and answer == "edit":
