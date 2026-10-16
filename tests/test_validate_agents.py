@@ -106,6 +106,43 @@ Body. Operational Hardening.
 class ScrubScan(unittest.TestCase):
     """Repo-wide 'keep it generic' scrub scan in validate_agents.py."""
 
+    def test_local_context_exemption_requires_ignored_and_untracked(self):
+        cases = (
+            ("ignored", True, True, False, "CONTEXT.md", 0),
+            ("unignored", True, False, False, "CONTEXT.md", 1),
+            ("staged", True, True, True, "CONTEXT.md", 1),
+            ("committed", True, True, True, "CONTEXT.md", 1),
+            ("exported", False, True, False, "CONTEXT.md", 1),
+            ("other_doc", True, True, False, "LOCAL.md", 1),
+        )
+        for name, repo, ignored, tracked, filename, expected in cases:
+            with self.subTest(name=name):
+                k = new_kit()
+                try:
+                    add_agent(k, "developers", "sample-developer.agent.md", GOOD_DEV)
+                    (k / filename).write_text(
+                        "Config at C:\\Users\\jdoe\\.copilot\n", encoding="utf-8")
+                    if ignored:
+                        (k / ".gitignore").write_text(filename + "\n", encoding="utf-8")
+                    if repo:
+                        subprocess.run(["git", "init", "--quiet", str(k)], check=True,
+                                       capture_output=True)
+                    if tracked:
+                        subprocess.run(["git", "add", "--force", "--", filename],
+                                       cwd=str(k), check=True, capture_output=True)
+                    if name == "committed":
+                        subprocess.run(
+                            ["git", "-c", "user.name=Test", "-c",
+                             "user.email=test@example.com", "-c", "commit.gpgsign=false",
+                             "commit", "--quiet", "-m", "Add context"],
+                            cwd=str(k), check=True, capture_output=True)
+                    code, text = run(k)
+                    self.assertEqual(code, expected, msg=text)
+                    if expected:
+                        self.assertIn(f"{filename}:1 : leaked personal path", text)
+                finally:
+                    shutil.rmtree(k, ignore_errors=True)
+
     def _kit_with_doc(self, body):
         k = new_kit()
         add_agent(k, "developers", "sample-developer.agent.md", GOOD_DEV)

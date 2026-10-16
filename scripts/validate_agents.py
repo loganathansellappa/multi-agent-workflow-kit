@@ -92,6 +92,22 @@ def scan_repo_for_leaks(kit_root, terms, terms_path=None):
         rel = f.relative_to(kit_root).as_posix()
         if rel in SCAN_SKIP_RELPATHS:
             continue
+        if rel == "CONTEXT.md":
+            # check-ignore excludes index entries, including force-added files.
+            # Without positive Git evidence, keep the context in the scan.
+            try:
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "--quiet", "--", "CONTEXT.md"],
+                    cwd=str(kit_root), capture_output=True, text=True)
+            except OSError as exc:
+                print(f"WARNING: cannot check local context ignore status: {exc}; "
+                      "scanning CONTEXT.md", file=sys.stderr)
+            else:
+                if ignored.returncode == 0:
+                    continue
+                if ignored.returncode != 1:
+                    print("WARNING: cannot confirm local context ignore status; "
+                          "scanning CONTEXT.md", file=sys.stderr)
         if terms_resolved and f.resolve() == terms_resolved:
             continue  # never scan the denylist file itself
         try:
