@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.21.1] - 2026-10-16
+
+### Fixed
+- Skip root `CONTEXT.md` in the leak scan only when Git confirms it is ignored
+  and untracked, still scan staged, tracked and exported copies
+
 ## [1.21.0] - 2026-10-16
 
 ### Added

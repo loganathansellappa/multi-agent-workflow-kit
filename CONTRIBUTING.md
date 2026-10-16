@@ -36,6 +36,12 @@ capability-contract tests (and a behavior eval if the kit ships one) and fails o
 Run it before opening a PR and before handing the kit to another developer. The CI workflow runs the
 same `verify.py`.
 
+The leak scan skips the root `CONTEXT.md` only when Git confirms it is ignored
+and untracked, keeping local context out of publication checks
+Tracked or staged copies are still scanned, including copies added with `git add -f`
+Without Git metadata or a successful ignore check, the file is scanned as usual
+Other ignored documents remain in scope
+
 **Agent-review gate (mandatory).** These two checks do not review instruction quality. For any changed
 `*.agent.md` or `skills/**/SKILL.md`, also run a review pass on the changes (a dedicated agent-instruction
 reviewer if you have one, otherwise self-review against "Adding or changing an agent" below) and resolve
