@@ -58,7 +58,10 @@ the text or the target means staging again. Text can be piped on stdin instead o
 nothing is hard-coded here.
 
 **Edit text** discards the old stage and never grants posting permission. Ask for
-replacement wording using a separate `ask_user` free-text field without
+replacement wording using the hook's `EDIT_FORM` in a separate `ask_user` call,
+with the current staged text visible in the message AND prefilled as the free-text
+field's `default`. The user can revise it or replace it entirely. Defaults remain
+forbidden on approval forms. The editing form has no
 `PR_POST_APPROVAL`. Stage it for the same slug, PR and reply/inline target. Humanizing,
 grounding and slophound run again. Show the checked text with a NEW token for fresh
 Post/Edit text/Skip approval. Skip, cancellation or unrecognised/freeform answers

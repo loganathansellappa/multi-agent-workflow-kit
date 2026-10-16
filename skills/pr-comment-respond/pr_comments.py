@@ -544,7 +544,8 @@ def cmd_stage(bb, cfg, args):
         f"followed by the final text below copied character for character, and a\n"
         f"requestedSchema with ONLY a string field `post_{token}` (no default),\n"
         f"enum [\"post\", \"edit\", \"skip\"] and enumNames [\"Post\", \"Edit text\", \"Skip\"].\n"
-        f"Only post approves. On edit, collect replacement text in a separate ask_user,\n"
+        f"Only post approves. On edit, use the hook's EDIT_FORM in a separate ask_user:\n"
+        f"show the staged text in the message and prefill the text field's default with it,\n"
         f"then stage it for the same PR and target and request fresh exact-text approval.\n"
         f"The pr-post-gate hook mints a one-use grant only if the user selects Post.\n")
     print(f"APPROVAL_TOKEN={token}")

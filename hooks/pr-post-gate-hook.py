@@ -572,6 +572,24 @@ def approval_request_problems(args, sid):
     return tokens, probs
 
 
+def edit_form(rec):
+    target = (f"reply to {rec['comment']}" if rec["kind"] == "reply"
+              else f"{rec['path']}:{rec['line']}")
+    text = rec["text"]
+    return {
+        "message": (f"Edit comment on {rec['slug']} #{rec['pr']} at {target}\n\n"
+                    f"Current staged text, for reference:\n{text}\n\n"
+                    "Revise the prefilled text below or replace it entirely\n"
+                    "Your wording will be checked by humanizing and slophound, "
+                    "then shown for fresh approval before posting"),
+        "requestedSchema": {"properties": {"text": {
+            "type": "string", "title": "Replacement comment text",
+            "description": "Edit the staged text or enter a new comment",
+            "default": text,
+        }}},
+    }
+
+
 def parse_answers(result_text):
     if not result_text.startswith("User responded:"):
         return None
@@ -727,7 +745,8 @@ def handle_post(payload):
         if probs or answer != expected:
             declined.append(t)
             if not probs and field.get("type") == "string" and answer == "edit":
-                editing.append(t)
+                rec, _ = staged_rec(t)
+                editing.append((t, rec))
             continue
         rec, _ = staged_rec(t)
         mint_grant(t, rec, sid)
@@ -756,11 +775,14 @@ def handle_post(payload):
         lines.append("NOT APPROVED (staged text discarded, do not post): " + ", ".join(declined)
                      + ". Reason: " + reason)
     if editing:
-        lines.append("EDIT REQUESTED: " + ", ".join(editing)
-                     + ". Ask the human for replacement text using a separate ask_user "
-                     "free-text field without PR_POST_APPROVAL. Then stage the replacement "
+        lines.append("EDIT REQUESTED: " + ", ".join(t for t, _ in editing)
+                     + ". Call ask_user with each EDIT_FORM below exactly as provided. "
+                     "Keep the current text visible in the message AND prefilled in the input. "
+                     "These are editing forms, not approval forms. Then stage the replacement "
                      "for the same PR and target. It must pass humanizing and slophound, "
                      "and receive fresh exact-text approval with a new token before posting.")
+        for _, rec in editing:
+            lines.append("\nEDIT_FORM=" + json.dumps(edit_form(rec), ensure_ascii=True))
     _emit({"additionalContext": "pr-post-gate: " + " ".join(lines)})
 
 

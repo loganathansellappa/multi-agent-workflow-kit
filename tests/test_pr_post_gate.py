@@ -394,6 +394,48 @@ class ApprovalTests(GateTestBase):
             self.choose(token, value)
             self.assertDenied(self.shell("s1", self.reply_cmd(token)))
 
+    def test_edit_form_preserves_staged_text_and_target_without_authorizing_post(self):
+        text = 'Please check `value` before reading it\nCould "null" reach this call?'
+        for target in ({"kind": "reply", "comment": "42"},
+                       {"kind": "inline", "path": "src/a.cpp", "line": 169}):
+            token = self.stage("s1", text=text, **target)
+            out = self.choose(token, "edit", text=text)
+            form = json.JSONDecoder().raw_decode(
+                out["additionalContext"].split("\nEDIT_FORM=", 1)[1])[0]
+            self.assertIn(text, form["message"])
+            self.assertIn(f"{SLUG} #{PR}", form["message"])
+            self.assertIn("reply to 42" if target["kind"] == "reply" else "src/a.cpp:169",
+                          form["message"])
+            self.assertEqual(form["requestedSchema"]["properties"]["text"]["default"], text)
+            self.assertNotIn("PR_POST_APPROVAL", json.dumps(form))
+            self.assertFalse((self.approvals / f"{token}.json").exists())
+            self.assertFalse((self.approvals / f"{token}.grant.json").exists())
+            self.assertAllowed(self.pre("s1", "ask_user", form))
+            self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user", "toolArgs": form,
+                "toolResult": {"textResultForLlm": "User responded: Please check the value",
+                               "sessionLog": "User responded:\ntext: Please check the value"}})
+            self.assertFalse((self.approvals / f"{token}.grant.json").exists())
+
+    def test_batch_edit_forms_preserve_each_comments_text_and_target(self):
+        texts = ("Please check this pointer", "Please check the bounds")
+        tokens = [self.stage("s1", text=text, kind="inline", path=f"src/{i}.cpp", line=i + 1)
+                  for i, text in enumerate(texts)]
+        args = {"message": "\n".join(f"PR_POST_APPROVAL {t}\n{text}"
+                                    for t, text in zip(tokens, texts)),
+                "requestedSchema": {"properties": {
+                    f"post_{t}": {"type": "string", "enum": ["post", "edit", "skip"]}
+                    for t in tokens}}}
+        self.assertAllowed(self.pre("s1", "ask_user", args))
+        out = self.run_hook("post", {"sessionId": "s1", "toolName": "ask_user", "toolArgs": args,
+            "toolResult": {"sessionLog": "User responded:\n" + "\n".join(
+                f"post_{t}: edit" for t in tokens)}})
+        forms = [json.JSONDecoder().raw_decode(part)[0]
+                 for part in out["additionalContext"].split("\nEDIT_FORM=")[1:]]
+        self.assertEqual(len(forms), 2)
+        for i, (form, text) in enumerate(zip(forms, texts)):
+            self.assertEqual(form["requestedSchema"]["properties"]["text"]["default"], text)
+            self.assertIn(f"src/{i}.cpp:{i + 1}", form["message"])
+
     def test_boolean_freeform_prefix_and_duplicate_answers_never_approve(self):
         for value in ("true but edit first", "trueish", "true\npost_{token}=false"):
             token = self.stage("s1")
@@ -682,6 +724,19 @@ class PrCommentsPostTests(GateTestBase):
             self.prc.stage_text(self.gate, "Fixed it; thanks.")
         self.assertEqual(self.prc.stage_text(self.gate, "Nice catch \u2014 fixed it now."),
                          "Nice catch, fixed it now.")
+
+    def test_edited_text_still_requires_slophound_before_reapproval(self):
+        token = self.stage("p1")
+        args = self.ask_args(token, field={
+            "type": "string", "enum": ["post", "edit", "skip"]})
+        out = self.run_hook("post", {"sessionId": "p1", "toolName": "ask_user", "toolArgs": args,
+            "toolResult": {"sessionLog": f"User responded:\npost_{token}: edit"}})
+        self.assertIn("\nEDIT_FORM=", out["additionalContext"])
+        with self.assertRaises(SystemExit):
+            self.prc.stage_text(self.gate, "Please delve into this value")
+        self.assertEqual(self.prc.stage_text(self.gate, "Please check this value"),
+                         "Please check this value")
+        self.assertFalse((self.approvals / f"{token}.grant.json").exists())
 
     def test_inline_anchor_requires_a_real_added_or_context_line(self):
         urls = []

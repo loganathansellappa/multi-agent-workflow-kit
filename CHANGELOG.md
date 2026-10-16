@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.20.3] - 2026-10-16
+
+### Changed
+- Edit text now returns an explicit editing form with the staged wording visible
+  above the input and prefilled in its default so users can revise or replace it
+- Edited text still requires humanizing, slophound and fresh approval before posting
+- Approval forms still forbid defaults, an editing form never grants permission to post
+
 ## [1.20.2] - 2026-10-15
 
 ### Fixed

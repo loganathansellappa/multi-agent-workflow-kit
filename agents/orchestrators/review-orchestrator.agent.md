@@ -81,8 +81,11 @@ only.
   3. Only if the user selected Post, run the post command the hook returns
      (`reply`/`comment --approval <token>`), one comment per shell call.
   4. Edit text discards the old stage without posting. Ask for replacement wording in a separate
-     free-text ask_user without an approval marker, stage it for the same PR and target, then
-     show the checked text for fresh approval with a new token. Skip posts nothing.
+     ask_user using the hook's `EDIT_FORM`, with the staged text visible in the message AND
+     prefilled as the free-text field's `default` so the user can revise or replace it.
+     This editing form has no approval marker. Stage the replacement for the same PR and
+     target, run humanizing and slophound again, then show the checked text for fresh
+     approval with a new token. Skip posts nothing.
 - Never use `gh`/`glab` comment commands, MCP comment tools, raw HTTP, `resolve` or `delete`. The hook
   denies them, and it also keeps the review read-only (no edits, commits, pushes or merges) even with opt-in.
 - Example: `copilot --agent review-orchestrator --allow-all -i "frontend: feature/login-fix --post-comments=true"`. Use `-i`, not `-p`: approval needs `ask_user`, which non-interactive runs cannot show. Add `--allow-all` so reviewer subagents are not auto-denied.
