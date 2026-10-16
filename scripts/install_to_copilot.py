@@ -119,6 +119,7 @@ def main(argv=None):
         action="store_true",
         help="Also install the guard preToolUse hooks into ~/.copilot/hooks "
              "(push-guard-hook.py + shell-guard-hook.py + slop-guard-hook.py + "
+             "pr-post-gate-hook.py + "
              "kit-hooks.json). See hooks/README.md.",
     )
     ap.add_argument("--no-backup", action="store_true",
@@ -167,7 +168,16 @@ def main(argv=None):
     # live KB root so a plain CLI session captures lessons without extra wiring.
     _install_instructions(kit_root, dest_copilot, dest_agents / CONFIG_FILE)
 
-    # Optionally install the guard preToolUse hooks (push-guard + shell-guard).
+    # Always ship the pr-post-gate script. review-orchestrator's frontmatter hooks
+    # and pr-comment-respond's pr_comments.py both load it, and both fail closed
+    # without it. Copying the file wires nothing globally; that stays under --hooks.
+    gate_src = kit_root / "hooks" / "pr-post-gate-hook.py"
+    if gate_src.is_file():
+        (dest_copilot / "hooks").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(gate_src, dest_copilot / "hooks" / gate_src.name)
+
+    # Optionally install the guard preToolUse hooks (push-guard + shell-guard +
+    # slop-guard + pr-post-gate).
     # Kept opt-in because a hook fires on every shell tool call for the whole
     # user, not just this kit; see hooks/README.md for the fail-open safety design.
     if args.hooks:
@@ -175,7 +185,8 @@ def main(argv=None):
         dest_hooks = dest_copilot / "hooks"
         dest_hooks.mkdir(parents=True, exist_ok=True)
         hook_config = src_hooks / "hooks.example.json"
-        hook_scripts = ["push-guard-hook.py", "shell-guard-hook.py", "slop-guard-hook.py"]
+        hook_scripts = ["push-guard-hook.py", "shell-guard-hook.py", "slop-guard-hook.py",
+                        "pr-post-gate-hook.py"]
         present = [s for s in hook_scripts if (src_hooks / s).is_file()]
         if present and hook_config.is_file():
             for s in present:

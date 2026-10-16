@@ -24,6 +24,13 @@ RULES (deny-only, fail-open)
      denied, so the grounding/target validity preflight (target exists and is open,
      every cited file/line/SHA is in this PR) cannot be switched off for a real post.
 
+RELATION TO pr-post-gate-hook.py
+--------------------------------
+This hook is the light, fail-open first line. The stricter pr-post-gate hook owns
+opt-in, the user-approved one-use grant behind --approval, the text rules
+(no hyphen/semicolon, slophound required) and review read-only mode, and it denies
+raw comment writes even when the command mentions pr_comments.py.
+
 FAIL BEHAVIOR
 -------------
 Always exits 0; allow/deny is expressed only in the JSON body (same discipline as
@@ -55,14 +62,19 @@ HTTP_CLIENT = re.compile(
 # Signals that the call writes rather than lists. Covers curl (-X/-d/--data),
 # PowerShell (-Method/-Body), gh/glab api (-f/--field/-F/--input), and python.
 POSTISH = re.compile(
-    r"(?i)(-Method\s+(POST|PUT|PATCH)|-X\s+(POST|PUT|PATCH)|--request\s+(POST|PUT|PATCH)"
-    r"|\bPOST\b|\bPUT\b|\bPATCH\b|(^|[\s;&|])-d\b|--data|-Body\b"
-    r"|requests\.(post|put|patch)"
+    r"(?i)(-Method\s+(POST|PUT|PATCH|DELETE)|-X\s+(POST|PUT|PATCH|DELETE)"
+    r"|--request\s+(POST|PUT|PATCH|DELETE)"
+    r"|\bPOST\b|\bPUT\b|\bPATCH\b|\bDELETE\b|(^|[\s;&|])-d\b|--data|-Body\b"
+    r"|requests\.(post|put|patch|delete)"
     r"|(^|[\s;&|])-f\b|--field\b|--input\b|(^|[\s;&|])-F\b)"
 )
 SANCTIONED = re.compile(r"pr_comments\.py", re.I)
-NO_LINT = re.compile(r"(?i)pr_comments\.py\b[^\n]*\b(reply|comment)\b[^\n]*--no-lint")
-NO_GROUND = re.compile(r"(?i)pr_comments\.py\b[^\n]*\b(reply|comment)\b[^\n]*--no-ground")
+NO_LINT = re.compile(r"(?i)pr_comments\.py\b[\s\S]*?--no-lint")
+NO_GROUND = re.compile(r"(?i)pr_comments\.py\b[\s\S]*?--no-ground")
+# A sanctioned post (reply/comment) MUST carry a one-time --approval token minted
+# by `stage` after the user's explicit yes. No token => no human approval => deny.
+POST_SUBCMD = re.compile(r"(?i)pr_comments\.py\b[\s\S]*?(?<![\w-])(reply|comment)(?![\w-])")
+HAS_APPROVAL = re.compile(r"(?i)(?<![\w-])--approval(?:=|\s)")
 
 
 def _emit(decision):
@@ -115,10 +127,6 @@ def extract_command(payload):
     return "\n".join(collected)
 
 
-def split_statements(cmd):
-    return [s.strip() for s in re.split(r"&&|\|\||;|\n", cmd) if s.strip()]
-
-
 def main():
     payload = read_payload()
     # Only inspect shell tool calls (preToolUse). Ignore subagent lifecycle events.
@@ -147,18 +155,32 @@ def main():
             "should post it."
         )
 
-    # Rule 1: block a raw comment POST/PUT/PATCH that bypasses the gated script.
-    for stmt in split_statements(cmd):
-        if (COMMENT_ENDPOINT.search(stmt) and HTTP_CLIENT.search(stmt)
-                and POSTISH.search(stmt) and not SANCTIONED.search(stmt)):
-            deny(
-                "slop-guard: posting a PR comment with a raw HTTP client (curl / gh "
-                "api / glab api / Invoke-RestMethod / urllib) bypasses the humanize + "
-                "slophound gate. Route it through the sanctioned helper: "
-                "python skills/pr-comment-respond/pr_comments.py "
-                "reply|comment --slug <slug> --pr <id> [--comment <cid>] --text \"...\". "
-                "It strips AI punctuation and rejects AI-sounding prose automatically."
-            )
+    # Rule 3: a sanctioned post MUST carry --approval. The token alone authorises
+        # nothing; pr-post-gate-hook.py checks the user-approved grant behind it.
+    if SANCTIONED.search(cmd) and POST_SUBCMD.search(cmd) and not HAS_APPROVAL.search(cmd):
+        deny(
+            "slop-guard: posting a PR comment requires an approval token. First run "
+            "`pr_comments.py stage ...` (prints APPROVAL_TOKEN), show the exact text "
+            "with ask_user (`PR_POST_APPROVAL <token>` plus a boolean post_<token>, no "
+            "default). pr-post-gate mints a one-use grant only on the user's true; then "
+            "post once with `--approval <token>`. No post without the user's approval."
+        )
+
+    # Rule 1: block a raw comment POST/PUT/PATCH/DELETE that bypasses the gated
+    # script. Matched across the WHOLE command (not per-statement) so splitting the
+    # endpoint URL into a variable and the HTTP call into a later statement cannot
+    # evade it.
+    if (COMMENT_ENDPOINT.search(cmd) and HTTP_CLIENT.search(cmd)
+            and POSTISH.search(cmd) and not SANCTIONED.search(cmd)):
+        deny(
+            "slop-guard: writing a PR comment with a raw HTTP client (curl / gh "
+            "api / glab api / Invoke-RestMethod / urllib), even with the URL in a "
+            "variable, bypasses the humanize + approval gate. Route it through the "
+            "sanctioned helper: python "
+            "~/.copilot/skills/pr-comment-respond/pr_comments.py stage ... then "
+            "reply|comment ... --approval <token>. It strips AI punctuation, rejects "
+            "AI-sounding prose, and refuses to post without the user's approval."
+        )
     allow()
 
 

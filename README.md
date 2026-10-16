@@ -30,6 +30,11 @@ learn → commit → push, with every guard hook (`shell-guard`, `slop-guard`, `
 annotated and captioned. Prefer HTML? Open [`docs/flow/flow.html`](docs/flow/flow.html) — it plays in any
 browser. Details in [`docs/flow/`](docs/flow/).
 
+**▶ [Watch: opt-in PR comment posting (`pr-post-gate.mp4`)](docs/pr-post-gate/pr-post-gate.mp4)** — how
+`review-orchestrator` stays silent by default, what `--post-comments=true` unlocks (staging plus your
+explicit yes, never auto-posting), and which bypasses the `pr-post-gate` hook denies. Details in
+[`docs/pr-post-gate/`](docs/pr-post-gate/).
+
 ---
 
 ## The idea in one picture
@@ -94,7 +99,7 @@ skills/            reusable procedures agents invoke by name
   untrusted-input-guard, evidence-discipline, learning-capture,
   delivery-metrics-capture, kb-curate, git-push-guard, workflow-state,
   pr-comment-respond
-hooks/             runtime CLI hooks (push-guard preToolUse enforcement)
+hooks/             runtime CLI hooks (push/shell/slop guards + pr-post-gate)
 kb/                knowledge-base pattern + example skeleton
 scripts/           cross-platform Python tooling (stdlib only)
 tests/             unit tests for the tooling
@@ -120,7 +125,7 @@ tests/             unit tests for the tooling
 | `kb-curate` | Periodic KB maintenance: dedup, trim stale, split oversized pages so the KB stays small and cheap to read (with a read-only `kb_lint.py` signal). |
 | `git-push-guard` | **Blocking** pre-push check: refuses `git push` to `main`/`master`/configured `baseBranch`; allows agent-created task branches. |
 | `workflow-state` | Deterministic per-repo memory of the run's facts (planned files, gate status, review/evidence commit, outcome), each stamped with the git commit it was made at. On resume it **re-checks those facts against live git** — catching scope drift and stale approvals that a restored chat alone would miss — and feeds the push-guard's soft gate-FAIL block. Includes an **append-only decision ledger** (`log-decision`/`decisions`) that records *why* each routing/conclusion choice was made (choice, alternatives, reasons, cited evidence, confidence) for audit/replay after `/resume` — audit-only, never gates or blocks. Stage-level recovery; complements (never replaces) server-side branch protection and CI. |
-| `pr-comment-respond` | Close the loop on PR review comments two ways: **inbound** (reviewers commented on your PR → judge each against the real code → delegate the fix to the owning component's developer agent → reply + resolve behind a confirmation gate) and **authoring** (review a diff, then post comments after a confirmation gate). Every reply/comment passes a **humanize + slophound gate** (strips AI punctuation tells, rejects slop) so feedback never posts in AI voice. Config-driven routing (reuses your `services:` map); Bitbucket reference adapter with GitHub/GitLab/Bitbucket-Cloud documented. |
+| `pr-comment-respond` | Close the loop on PR review comments two ways: **inbound** (reviewers commented on your PR → judge each against the real code → delegate the fix to the owning component's developer agent → reply + resolve behind a confirmation gate) and **authoring** (review a diff, then post comments after a confirmation gate). Every reply/comment passes a **humanize + slophound gate** (strips AI punctuation tells, rejects slop, no hyphens or semicolons) and posts only after you approve the exact text (hook-enforced, one-use grant) so feedback never posts in AI voice or without your yes. Config-driven routing (reuses your `services:` map); Bitbucket reference adapter with GitHub/GitLab/Bitbucket-Cloud documented. |
 
 ### Hooks (policy enforced at the CLI tool boundary)
 
@@ -129,16 +134,17 @@ interceptors the Copilot CLI runs on its own at lifecycle points, so they apply
 without the agent's cooperation. They are **defense-in-depth and deliberately
 fail-open** (a crash or an uncovered path allows the call), so pair them with
 server-side branch protection and repo permissions — the model is not the security
-boundary. Hooks are **session/user-level, not per-agent** — see
-[`hooks/README.md`](hooks/README.md).
+boundary. Global hooks are session/user-level; an agent can also declare its own in
+frontmatter (`review-orchestrator` does) — see [`hooks/README.md`](hooks/README.md).
 
 | Hook | Event | Purpose |
 | --- | --- | --- |
 | `push-guard-hook.py` | `preToolUse` | The **enforcement** half of `git-push-guard`: inspects every shell `git push` and **denies** pushes to a protected branch at the tool layer. Fail-open on hook error so it can never brick a session. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` | Enforces the shell trust boundary: denies secret-path reads for any agent, and denies workspace mutation while a read-only agent is active. Fail-open. |
-| `slop-guard-hook.py` | `preToolUse` | The **enforcement** half of `pr-comment-respond`: denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, and denies `--no-lint` (humanize) and `--no-ground` (grounding/target preflight) on a real post. Covers GitHub, GitLab, and Bitbucket. Fail-open. |
+| `slop-guard-hook.py` | `preToolUse` | The light first line for `pr-comment-respond`: denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, denies `--no-lint`/`--no-ground`, and denies a post without `--approval`. Covers GitHub, GitLab, and Bitbucket. Fail-open. |
+| `pr-post-gate-hook.py` | `preToolUse` + `postToolUse` + `userPromptSubmitted` (+ agent-scoped modes) | **Deterministic, fail-closed PR comment gate.** Review posting is OFF unless the human typed `--post-comments=true`; each post needs a one-use HMAC grant the hook mints only after the user answers `true` to an `ask_user` form showing the exact text, bound to session + PR + target + text. Text must be humanized, have no hyphen/dash or semicolon, and pass slophound. Denies `gh`/`glab`/MCP/raw-HTTP comment writes and keeps reviews read-only (no edits, commits, pushes, merges). |
 
-Install them opt-in with `python scripts/install_to_copilot.py --hooks`. Run the
+Install them with `python scripts/install_to_copilot.py --hooks` (then restart the CLI). Run the
 skills and the hooks together (defense-in-depth) and back the push rule with
 server-side branch protection.
 
@@ -356,9 +362,14 @@ The generated block looks like this (you never hand-edit it):
 
    ```bash
    python scripts/install_to_copilot.py
-   # optional: also install the push-guard preToolUse hook (tool-layer enforcement)
+   # recommended: also install the guard hooks (push-guard, shell-guard, slop-guard, pr-post-gate)
    python scripts/install_to_copilot.py --hooks
    ```
+
+   Restart the Copilot CLI afterwards: hooks load only at CLI start. To post PR comments through
+   `pr-comment-respond`, also install `slophound` (`pipx install slophound`, see
+   [`skills/pr-comment-respond/references/setup.md`](skills/pr-comment-respond/references/setup.md))
+   (comment staging fails closed without it).
 
    Before overwriting, the installer snapshots your current live agents+skills into
    `~/.copilot/.install-backups/<timestamp>/` (keeping the **newest 3**) for easy rollback, then ships a
@@ -436,6 +447,50 @@ Useful flags:
 
 Run `copilot --help` for the full flag list.
 
+### Reviewing a PR and (optionally) posting comments
+
+`review-orchestrator` is read-only and **never posts by default**: findings go into its report only.
+To let it post, put `--post-comments=true` **inside the prompt text** (it is not a CLI flag), in an
+interactive session:
+
+```bash
+copilot --agent review-orchestrator
+> serviceA: feature/login-fix --post-comments=true
+```
+
+You can also point it at PRs instead of branches. Every line below is review only, nothing is posted:
+
+```bash
+copilot --agent review-orchestrator --prompt "serviceA: 4521"                 # bare PR number + service
+copilot --agent review-orchestrator --prompt "serviceA: PR#4521, PR#4522"     # several PRs, one repo
+copilot --agent review-orchestrator --prompt "https://bb.example.com/projects/WEB/repos/web-app/pull-requests/4521/overview,
+https://bb.example.com/projects/API/repos/api-service/pull-requests/88/overview"   # cross repo, no service needed
+```
+
+PR references are resolved read only by `pr_comments.py pr-info` (source, target, head, service). The
+repo slug must be listed under `bitbucket.repositories` in `agents.config.yaml` with its `service`. Add
+`--post-comments=true` inside the prompt to enable staged, approved posting, and
+use `-i` rather than `--prompt` so the approval form is available:
+
+```powershell
+copilot --agent review-orchestrator --allow-all -i "serviceA: 4521 --post-comments=true"
+```
+
+Opt-in unlocks staging plus approval, never automatic posting. For each comment the agent stages the
+related PR diff file and line; generic comments and file-only anchors are disabled.
+Invalid anchors never fall back to PR-level comments. Replies stay in existing threads.
+The helper checks all authors' open comments/tasks before staging and again before posting.
+Matching existing coverage is skipped rather than duplicated, including your own manual items.
+The agent stages the
+humanized text (no hyphens, no semicolons, slophound clean), then shows you an `ask_user` form with
+`PR_POST_APPROVAL <token>` and the exact text, with **Post / Edit text / Skip** choices.
+Only **Post** makes the `pr-post-gate` hook mint a one-use grant for that exact PR, target and text;
+the agent then posts it once. **Edit text** discards the old stage and asks for your own wording.
+The replacement passes the same checks, then needs fresh approval before posting.
+**Skip** or cancellation posts nothing. Under `-p` there is no `ask_user`, so
+nothing can be approved or posted. Edits, commits, pushes and merges stay denied for the whole review.
+Watch the walkthrough in [`docs/pr-post-gate/`](docs/pr-post-gate/).
+
 ---
 
 ## Adapt it to your stack — `serviceA/B/C` are placeholders. Add one `services` entry per real repo.
@@ -456,7 +511,7 @@ Run `copilot --help` for the full flag list.
 | --- | --- |
 | `scripts/validate_agents.py` | Lints the agent kit (frontmatter, hardening block, gate wording, skill refs, reviewer least-privilege) **and runs a repo-wide "keep it generic" scrub scan** (personal paths, internal ticket ids, private hosts, and — via an optional gitignored `scripts/company-terms.txt` — company/product names) so nothing organisation-specific ever ships. |
 | `scripts/apply_model_routing.py` | Writes per-agent model bindings from config into the Copilot CLI store. Backs up `settings.json` → `settings.json.bak` before overwriting; `--dry-run` previews. |
-| `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. Snapshots the current live agents+skills to `~/.copilot/.install-backups/` (newest 3) before overwriting, then ships `capability_check.py` into `~/.copilot/scripts/` and runs it post-install. `--hooks` also installs the push-guard `preToolUse` hook; `--no-backup`/`--no-verify` opt out. |
+| `scripts/install_to_copilot.py` | Copies agents + skills + config into `~/.copilot/`. Snapshots the current live agents+skills to `~/.copilot/.install-backups/` (newest 3) before overwriting, then ships `capability_check.py` into `~/.copilot/scripts/` and runs it post-install. `--hooks` also installs the guard hooks (push-guard, shell-guard, slop-guard, pr-post-gate) and registers them in `~/.copilot/hooks/kit-hooks.json`; `pr-post-gate-hook.py` itself is always copied because `review-orchestrator` and `pr_comments.py` load it. `--no-backup`/`--no-verify` opt out. |
 | `scripts/capability_check.py` | Portable, layout-agnostic drift check (role by name) that runs against the flattened `~/.copilot/agents/` install: reviewers hold no mutation/delegation tools, developers keep `edit`/`task`, loop cap present. Travels with the pack. |
 | `scripts/sync_from_live.py` | Pulls changes made in `~/.copilot/` back into this repo. Delete-on-drift, so a real run snapshots `agents/`+`skills/` to `.sync-backups/<timestamp>/` (keeps newest 2); use `--what-if` to preview. |
 | `scripts/metrics_rollup.py` | Summarizes the metrics log into a per-day/agent rollup. |

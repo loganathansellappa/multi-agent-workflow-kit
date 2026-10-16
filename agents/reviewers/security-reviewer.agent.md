@@ -17,7 +17,9 @@ serialization/deserialization, cryptography, secrets, or rendering of untrusted 
 3. Resolve the change set (branch diff vs `baseBranch` from `agents.config.yaml`, or staged/unstaged). If
    the input is a ticket/issue key, treat it as a branch-name search token (match remote branches); never
    query issue trackers/MCP/web to interpret it — this is strictly a git-diff review. If there is nothing
-   to compare, say so and stop.
+   to compare, say so and stop. A PR reference (bare number, `PR#<n>` or PR URL) is resolved read-only with
+   `pr_comments.py pr-info --pr <ref> [--service <component>]`; diff `origin/<target>...origin/<source>`
+   (or fetch and use `head` when the source branch is gone), exactly as `code-reviewer` does.
 4. Analyze only for **exploitable security weaknesses**; verify each against the real code before reporting.
 
 ## What to look for

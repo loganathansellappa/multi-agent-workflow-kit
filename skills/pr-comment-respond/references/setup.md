@@ -50,11 +50,12 @@ You should get JSON with the PR branch, the resolved `repoPath` / `baseBranch`, 
 routed `developerAgent`, and the open comments. If the base URL or token is
 wrong, the helper fails fast with the host error: fix the config, do not guess.
 
-Install `slophound` so the humanize gate is active:
+Install `slophound` (required):
 
 ```
 pipx install slophound    # or: uv tool install slophound
 ```
 
-Without it, posts still go through (the gate skips with a note), but you lose the
-AI-voice check.
+Without it, staging fails closed and nothing can be posted. Also install the kit
+hooks (`python scripts/install_to_copilot.py --hooks`) and restart the CLI: posting
+needs `pr-post-gate-hook.py` to mint the approval grant.
