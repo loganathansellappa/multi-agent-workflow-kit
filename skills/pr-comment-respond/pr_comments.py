@@ -548,6 +548,14 @@ def cmd_stage(bb, cfg, args):
         f"show the staged text in the message and prefill the text field's default with it,\n"
         f"then stage it for the same PR and target and request fresh exact-text approval.\n"
         f"The pr-post-gate hook mints a one-use grant only if the user selects Post.\n")
+    sys.stderr.write(
+        "For multiple staged comments, show each exact text, PR, target and PR_POST_APPROVAL token "
+        "in one ask_user message. Use ONLY post_comments, type array, items "
+        "{\"type\":\"string\",\"enum\":[all displayed tokens in order]}, no default or "
+        "selection limits. The human selects any subset, all or one; unselected comments "
+        "are skipped. Cancelling the whole form approves nothing. Run every APPROVED "
+        "command returned by the hook independently, never cancel selected posts because "
+        "another item was skipped. For edits, use a separate Post/Edit text/Skip form.\n")
     print(f"APPROVAL_TOKEN={token}")
     print("--- final text (copy exactly into ask_user) ---")
     print(final)

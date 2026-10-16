@@ -68,6 +68,20 @@ Post/Edit text/Skip approval. Skip, cancellation or unrecognised/freeform answer
 post nothing. Legacy boolean forms remain supported, but new forms must offer
 Edit text. Never add custom text fields to an approval form.
 
+**Several comments:** show each exact staged text, PR, target and
+`PR_POST_APPROVAL <token>` marker in one form for selecting comments to post.
+Use only `post_comments`, type `array`, with `items` exactly
+`{"type":"string","enum":["<first token>","<second token>"]}` in displayed marker order.
+Do not set a default, `minItems` or `maxItems`.
+The user may select a subset, all comments or just one. Unselected comments are
+skipped. Cancelling the whole form approves nothing.
+Run each returned `APPROVED` command independently. Skipping another comment
+must not cancel a selected post.
+To edit one item, use its separate Post/Edit text/Skip form and the prefilled
+editor above, then restage and request fresh permission.
+A single comment still uses Post/Edit text/Skip and needs explicit permission.
+Humanizing, slophound, duplicate checks and one-use target-bound grants still apply.
+
 **Comment rules (deterministic, checked at stage AND at post):** no hyphen or dash of
 any kind and no semicolon (inside `inline code` both are fine), and slophound must pass.
 slophound is required: if it is not installed, staging fails closed. Rewrite the text

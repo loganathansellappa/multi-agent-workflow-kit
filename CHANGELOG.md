@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.21.0] - 2026-10-16
+
+### Added
+- Select a subset, all or one of several staged PR comments in a single
+  `post_comments` form. Each selected token gets its own one-use grant.
+- Validate token-bound JSON arrays and comma lists. Unknown tokens, duplicates,
+  freeform answers, bulk `all` and cancelled forms grant nothing.
+
+### Changed
+- Show each exact text, PR and target before selection. Skipped comments do not
+  cancel selected posts. Single comments retain Post/Edit text/Skip. Edits still
+  use the prefilled editor, fresh staging, humanizing, slophound and approval.
+
 ## [1.20.3] - 2026-10-16
 
 ### Changed

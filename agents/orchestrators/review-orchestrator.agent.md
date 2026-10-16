@@ -60,6 +60,14 @@ only.
 
 ## PR comment posting (opt-in, hook-enforced, default OFF)
 
+- For several staged comments, use the selection form in `pr-comment-respond`.
+  Show each exact text, PR, target and approval marker. Use only the `post_comments`
+  array with string items whose enum lists the tokens in marker order, with no default
+  or selection limits. The user can select a subset, all or one. Unselected items
+  are skipped independently. Cancelling the whole form grants nothing. Run each
+  approved command separately. For one comment keep Post/Edit text/Skip.
+  Edits use a separate individual form and the prefilled editor, then fresh staging,
+  humanizing, slophound and approval.
 - Default: never post, stage or draft PR comments on the host. Findings go into the report only.
 - Opt in only when the human puts `--post-comments=true` inside the prompt text (like `--html-report`).
   Opt-in enables staging plus explicit approval, never automatic posting. When you spawn a reviewer that
@@ -75,7 +83,7 @@ only.
   coverage; do not restage reworded text to evade it.
   1. `stage` the text. It is humanized and must have no hyphen or dash, no semicolon (outside `code`),
      and pass slophound. If rejected, rewrite plainer and stage again.
-  2. Call `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged text, and ONLY a string field
+  2. For a single comment, call `ask_user` with `PR_POST_APPROVAL <token>`, the exact staged text, and ONLY a string field
      `post_<token>` with enum `["post", "edit", "skip"]`, enumNames `["Post", "Edit text", "Skip"]`
      and no default.
   3. Only if the user selected Post, run the post command the hook returns
