@@ -80,8 +80,9 @@ class GateTestBase(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # ------------------------------------------------------------ helpers
-    def run_hook(self, mode, payload, raw=None):
-        p = subprocess.run([sys.executable, str(self.home / "hooks" / "pr-post-gate-hook.py"), mode],
+    def run_hook(self, mode, payload, raw=None, extra_args=()):
+        p = subprocess.run([sys.executable, str(self.home / "hooks" / "pr-post-gate-hook.py"),
+                            mode, *extra_args],
                            input=raw if raw is not None else json.dumps(payload),
                            capture_output=True, text=True, env=os.environ.copy(), timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -202,6 +203,162 @@ class OptInTests(GateTestBase):
         self.spawn("u1", "c1", "review-orchestrator", "review PR 7")
         token = self.stage("c1")
         self.assertDenied(self.pre("c1", "ask_user", self.ask_args(token)), "opt in")
+
+
+class ReviewBudgetTests(GateTestBase):
+    PR_PROMPT = (
+        "Review https://bb.example.com/projects/APP/repos/web/pull-requests/42 "
+        "origin/main is 1111111111111111111111111111111111111111 "
+        "head 2222222222222222222222222222222222222222"
+    )
+
+    def start_review(self, child, prompt=None):
+        self.spawn("orchestrator", child, "code-reviewer", prompt or self.PR_PROMPT)
+
+    def test_same_pinned_pr_is_followup_with_hard_eight_call_limit(self):
+        self.start_review("full")
+        self.start_review("followup", self.PR_PROMPT + " verify this claim")
+        self.assertEqual(self.gate.session_rec("followup")["reviewMode"], "follow-up")
+        for _ in range(self.gate.FOLLOWUP_REVIEW_TOOL_LIMIT):
+            self.assertAllowed(self.pre("followup", "view", {"path": "src/file.ts"}))
+        self.assertDenied(self.pre("followup", "view", {"path": "src/file.ts"}), "limit reached")
+
+    def test_changed_commit_range_starts_a_full_review(self):
+        self.start_review("first")
+        changed = self.PR_PROMPT.replace("2" * 40, "3" * 40)
+        self.start_review("new-head", changed)
+        self.assertEqual(self.gate.session_rec("new-head")["reviewMode"], "full")
+        for _ in range(self.gate.FULL_REVIEW_TOOL_LIMIT):
+            self.assertAllowed(self.pre("new-head", "view", {"path": "src/file.ts"}))
+        self.assertDenied(self.pre("new-head", "view", {"path": "src/file.ts"}), "limit reached")
+
+    def test_labeled_base_and_head_commits_are_recognized(self):
+        labeled = (
+            "Review https://bb.example.com/projects/APP/repos/web/pull-requests/42 "
+            "Base commit: " + "1" * 40 + " Head commit: " + "2" * 40
+        )
+        self.start_review("labeled-full", labeled)
+        self.start_review("labeled-followup", labeled + " verify this claim")
+        self.assertEqual(self.gate.session_rec("labeled-full")["reviewMode"], "full")
+        self.assertEqual(self.gate.session_rec("labeled-followup")["reviewMode"], "follow-up")
+
+    def test_short_commit_hashes_do_not_identify_a_pinned_range(self):
+        short = (
+            "Review https://bb.example.com/projects/APP/repos/web/pull-requests/42 "
+            "Base commit: " + "1" * 7 + " Head commit: " + "2" * 7
+        )
+        self.start_review("short-first", short)
+        self.start_review("short-repeat", short + " verify this claim")
+        self.assertIsNone(self.gate.session_rec("short-first")["reviewTarget"])
+        self.assertEqual(self.gate.session_rec("short-repeat")["reviewMode"], "full")
+
+    def test_contract_scans_have_two_reserved_followup_slots(self):
+        self.start_review("first")
+        self.start_review("followup")
+        command = "python contract_check.py scan --repo-path C:\\repos\\web --base origin/main --head origin/feature"
+        for _ in range(self.gate.FOLLOWUP_CONTRACT_SCAN_LIMIT):
+            self.assertAllowed(self.shell("followup", command))
+        self.assertDenied(self.shell("followup", command), "contract-scan limit")
+
+    def test_tool_call_id_prevents_double_counting_global_and_agent_hooks(self):
+        self.start_review("first")
+        self.start_review("followup")
+        call = {"sessionId": "followup", "toolName": "view",
+                "toolArgs": {"path": "src/file.ts"}, "toolCallId": "same-call"}
+        self.assertAllowed(self.run_hook("pre", call))
+        self.assertAllowed(self.run_hook("review-pre", call, extra_args=("code-reviewer",)))
+        for _ in range(self.gate.FOLLOWUP_REVIEW_TOOL_LIMIT - 1):
+            self.assertAllowed(self.pre("followup", "view", {"path": "src/file.ts"}))
+        self.assertDenied(self.pre("followup", "view", {"path": "src/file.ts"}), "limit reached")
+
+    def test_missing_tool_call_id_can_only_reduce_the_effective_budget(self):
+        self.start_review("first")
+        self.start_review("followup")
+        call = {"sessionId": "followup", "toolName": "view",
+                "toolArgs": {"path": "src/file.ts"}}
+        self.assertAllowed(self.run_hook("pre", call))
+        self.assertAllowed(self.run_hook("review-pre", call))
+        budget = self.home / "hooks" / ".pr-post-gate" / "tool-budgets" / "followup.json"
+        self.assertEqual(json.loads(budget.read_text(encoding="utf-8"))["toolCalls"], 2)
+
+    def test_batched_tool_calls_are_counted_individually(self):
+        self.start_review("first")
+        self.start_review("followup")
+        payload = {
+            "sessionId": "followup",
+            "toolCalls": [{"id": str(i), "name": "view", "args": {"path": "src/file.ts"}}
+                          for i in range(self.gate.FOLLOWUP_REVIEW_TOOL_LIMIT)],
+        }
+        self.assertEqual(self.run_hook("pre", payload), {})
+        extra = {"sessionId": "followup",
+                 "toolCalls": [{"id": "extra", "name": "view", "args": {"path": "src/file.ts"}}]}
+        self.assertDenied(self.run_hook("pre", extra), "limit reached")
+
+    def test_reviewer_launch_state_write_failure_fails_closed(self):
+        launch_path = self.home / "hooks" / ".pr-post-gate" / "launches"
+        launch_path.parent.mkdir(parents=True, exist_ok=True)
+        launch_path.write_text("not a directory", encoding="utf-8")
+        payload = {
+            "sessionId": "parent",
+            "toolName": "task",
+            "toolArgs": {"agent_type": "code-reviewer", "prompt": self.PR_PROMPT},
+        }
+        self.assertDenied(self.run_hook("pre", payload), "refusing reviewer launch")
+
+    def test_unreadable_budget_state_fails_closed(self):
+        self.start_review("review")
+        budget = self.home / "hooks" / ".pr-post-gate" / "tool-budgets" / "review.json"
+        budget.parent.mkdir(parents=True, exist_ok=True)
+        budget.write_text("not valid json", encoding="utf-8")
+        payload = {"sessionId": "review", "toolName": "view",
+                   "toolArgs": {"path": "src/file.ts"}}
+        self.assertDenied(
+            self.run_hook("review-pre", payload, extra_args=("code-reviewer",)),
+            "state is unreadable")
+
+    def test_non_object_review_run_state_fails_closed(self):
+        self.start_review("first")
+        state_file = next((self.home / "hooks" / ".pr-post-gate" / "review-runs").glob("*.json"))
+        state_file.write_text("[]", encoding="utf-8")
+        payload = {
+            "sessionId": "orchestrator",
+            "toolName": "task",
+            "toolArgs": {"agent_type": "code-reviewer", "prompt": self.PR_PROMPT},
+        }
+        self.assertDenied(self.run_hook("pre", payload), "duplicate review tracking")
+
+    def test_invalid_review_run_fields_fail_closed(self):
+        self.start_review("first")
+        state_file = next((self.home / "hooks" / ".pr-post-gate" / "review-runs").glob("*.json"))
+        state_file.write_text(json.dumps({"ts": 1, "runs": []}), encoding="utf-8")
+        payload = {
+            "sessionId": "orchestrator",
+            "toolName": "task",
+            "toolArgs": {"agent_type": "code-reviewer", "prompt": self.PR_PROMPT},
+        }
+        self.assertDenied(self.run_hook("pre", payload), "duplicate review tracking")
+
+    def test_non_object_tool_budget_state_fails_closed(self):
+        self.start_review("review")
+        budget = self.home / "hooks" / ".pr-post-gate" / "tool-budgets" / "review.json"
+        budget.parent.mkdir(parents=True, exist_ok=True)
+        budget.write_text("[]", encoding="utf-8")
+        payload = {"sessionId": "review", "toolName": "view",
+                   "toolArgs": {"path": "src/file.ts"}}
+        self.assertDenied(
+            self.run_hook("review-pre", payload, extra_args=("code-reviewer",)),
+            "state is unreadable")
+
+    def test_invalid_tool_budget_fields_fail_closed(self):
+        self.start_review("review")
+        budget = self.home / "hooks" / ".pr-post-gate" / "tool-budgets" / "review.json"
+        budget.parent.mkdir(parents=True, exist_ok=True)
+        budget.write_text(json.dumps({"ts": 1, "toolCalls": [], "contractScans": 0}), encoding="utf-8")
+        payload = {"sessionId": "review", "toolName": "view",
+                   "toolArgs": {"path": "src/file.ts"}}
+        self.assertDenied(
+            self.run_hook("review-pre", payload, extra_args=("code-reviewer",)),
+            "invalid format")
 
 
 class ApprovalTests(GateTestBase):

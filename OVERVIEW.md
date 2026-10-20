@@ -76,7 +76,7 @@ and target in one `post_comments` selection form. Select a subset, all or one.
 Each selected token gets its own one-use grant. Skipped items do not cancel
 selected posts. Cancelling the whole form approves nothing. Single comments keep
 Post/Edit text/Skip, and edits still need the prefilled editor and fresh approval.
-- `pr-post-gate-hook.py` — the **deterministic, fail-closed PR comment gate**: review posting is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant minted only from the user's `true` in an `ask_user` form showing the exact text, bound to session + PR + target + text. Enforces no hyphen/dash, no semicolon, slophound clean, and keeps reviews read-only. Also wired as agent-scoped frontmatter hooks in `review-orchestrator`.
+- `pr-post-gate-hook.py` — the **deterministic PR comment and review-work gate**: review posting is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant minted only from the user's `true` in an `ask_user` form showing the exact text, bound to session + PR + target + text. Enforces no hyphen/dash, no semicolon, slophound clean, and keeps reviews read-only. It caps full reviews at 64 ordinary tool calls and pinned-range follow ups at 8 calls plus 2 contract scans, with agent-scoped hooks on the orchestrator and both reviewers.
 - `hooks.example.json` — registers the guards on the CLI's `preToolUse` / `postToolUse` / `userPromptSubmitted` + subagent lifecycle events.
 
 ## Where things live

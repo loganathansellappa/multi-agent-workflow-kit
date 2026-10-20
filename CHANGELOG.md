@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.22.1] - 2026-10-20
+
+### Added
+- Add regression coverage for launch-state failures, malformed state shapes,
+  invalid state fields, labeled hashes and abbreviated-hash rejection
+
+### Fixed
+- Fail closed if reviewer launch state cannot be persisted
+- Fail closed when reviewer state contains valid JSON with an unexpected shape
+- Require full 40 character hashes for pinned-range follow up detection while
+  accepting labeled hashes and common PR URL forms
+
+## [1.22.0] - 2026-10-20
+
+### Added
+- Enforce per-reviewer tool-call limits at runtime: 64 calls for a full review
+  and 8 calls plus 2 contract scans for a repeated review of the same pinned PR range.
+- Add scoped budget hooks to both reviewer agents and require the orchestrator
+  to pass PR identity and pinned commits for bounded follow ups.
+- Cover pinned-range classification, changed-range resets, call limits, hook
+  deduplication and batched tool calls in the post-gate test suite.
+
 ## [1.21.1] - 2026-10-16
 
 ### Fixed

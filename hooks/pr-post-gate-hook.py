@@ -71,6 +71,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 COPILOT_HOME = Path(os.environ.get("COPILOT_HOME") or (Path.home() / ".copilot"))
@@ -86,8 +87,15 @@ STAGE_TTL = 900
 GRANT_TTL = 900
 LAUNCH_TTL = 600
 SESSION_TTL = 12 * 3600
+FULL_REVIEW_TOOL_LIMIT = 64
+FOLLOWUP_REVIEW_TOOL_LIMIT = 8
+FOLLOWUP_CONTRACT_SCAN_LIMIT = 2
 
 OPT_IN = re.compile(r"(?i)(?<![\w-])--post-comments=true(?![\w-])")
+PR_URL = re.compile(r"(?i)\bhttps?://[^\s\"'<>()]+/(?:pull-requests/\d+|pull/\d+|-/merge_requests/\d+|merge_requests/\d+)")
+PR_HEAD = re.compile(r"(?i)\bhead(?:\s+commit)?[=: ]+([0-9a-f]{40})\b")
+PR_BASE = re.compile(r"(?i)(?:\borigin/[A-Za-z0-9._/-]+\s+(?:is|=|@)\s*|\bbase(?:\s+commit)?[=: ]+)([0-9a-f]{40})\b")
+CONTRACT_SCAN = re.compile(r"(?i)\bcontract_check\.py\b[\s\S]*?\bscan\b")
 TOKEN_RE = r"[0-9a-f]{16,64}"
 APPROVAL_MARK = re.compile(r"PR_POST_APPROVAL\s+(" + TOKEN_RE + r")")
 
@@ -186,9 +194,18 @@ def _safe(name) -> str:
 
 def _read_json(p: Path):
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return None
+    return data if isinstance(data, dict) else None
+
+
+def _valid_counter(value):
+    return type(value) is int and value >= 0
+
+
+def _valid_timestamp(value):
+    return type(value) in (int, float) and value >= 0
 
 
 def _write_json(p: Path, data) -> None:
@@ -196,6 +213,139 @@ def _write_json(p: Path, data) -> None:
     tmp = p.with_name(p.name + f".{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data), encoding="utf-8")
     os.replace(tmp, p)
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """Serialize read/modify/write state updates across parallel hook processes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+            lock.seek(0, os.SEEK_END)
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _review_target(prompt):
+    """Return a stable PR/base/head key, or None when the prompt is not pinned."""
+    url = PR_URL.search(prompt or "")
+    base = PR_BASE.search(prompt or "")
+    head = PR_HEAD.search(prompt or "")
+    if not url or not base or not head:
+        return None
+    normalized_url = re.sub(r"/(?:overview|diff|commits)$", "", url.group(0).rstrip(".,;)"))
+    return f"{normalized_url.lower()}#{base.group(1).lower()}...{head.group(1).lower()}"
+
+
+def _review_launch_mode(parent, agent, prompt, tool_call_id=None):
+    target = _review_target(prompt)
+    if not target or not is_review_agent(agent) or agent in ORCHESTRATORS:
+        return "full", target
+    digest = hashlib.sha256(f"{parent}\n{agent}\n{target}".encode("utf-8")).hexdigest()
+    path = STATE / "review-runs" / f"{digest}.json"
+    with _file_lock(path.with_suffix(".lock")):
+        rec = _read_json(path)
+        if rec is None and path.exists():
+            raise OSError("duplicate review state is unreadable")
+        rec = rec or {}
+        if (not _valid_timestamp(rec.get("ts", 0))
+                or not _valid_counter(rec.get("runs", 0))
+                or (rec.get("lastToolCallId") is not None
+                    and not isinstance(rec.get("lastToolCallId"), str))
+                or (rec.get("lastMode") is not None
+                    and rec.get("lastMode") not in ("full", "follow-up"))):
+            raise OSError("duplicate review state has an invalid format")
+        if time.time() - rec.get("ts", 0) > SESSION_TTL:
+            rec = {}
+        if tool_call_id and rec.get("lastToolCallId") == tool_call_id:
+            return rec.get("lastMode", "full"), target
+        mode = "follow-up" if rec.get("runs", 0) else "full"
+        _write_json(path, {"ts": time.time(), "runs": rec.get("runs", 0) + 1,
+                           "lastToolCallId": tool_call_id, "lastMode": mode})
+    return mode, target
+
+
+def _review_agent_name(sid):
+    marker = review_marker(sid) or {}
+    record = session_rec(sid) or {}
+    return marker.get("agentName") or record.get("agentType") or ""
+
+
+def _tool_call_id(payload):
+    call_id = payload.get("toolCallId") or payload.get("tool_call_id")
+    if call_id:
+        return str(call_id)
+    calls = payload.get("toolCalls") or payload.get("tool_calls")
+    if isinstance(calls, list) and len(calls) == 1 and isinstance(calls[0], dict):
+        return str(calls[0].get("id") or "")
+    return ""
+
+
+def _review_tool_budget(sid, tool, args, tool_call_id, agent_override=None):
+    agent = agent_override or _review_agent_name(sid)
+    if not is_review_agent(agent) or agent in ORCHESTRATORS:
+        return ""
+    session = session_rec(sid)
+    marker = review_marker(sid)
+    if agent_override and not session and not marker:
+        return "reviewer session tracking is unavailable; refusing tool use"
+    session = session or {}
+    marker = marker or {}
+    mode = marker.get("reviewMode") or session.get("reviewMode") or "full"
+    path = STATE / "tool-budgets" / f"{_safe(sid)}.json"
+    command = str(args.get("command") or args.get("script") or "")
+    contract_scan = bool(mode == "follow-up" and CONTRACT_SCAN.search(command))
+    with _file_lock(path.with_suffix(".lock")):
+        rec = _read_json(path)
+        if rec is None and path.exists():
+            return "review tool budget state is unreadable; stop and report blocked"
+        rec = rec or {}
+        seen = rec.get("seenToolCallIds", [])
+        if (not _valid_timestamp(rec.get("ts", 0))
+                or not _valid_counter(rec.get("toolCalls", 0))
+                or not _valid_counter(rec.get("contractScans", 0))
+                or not isinstance(seen, list)
+                or any(not isinstance(call_id, str) for call_id in seen)):
+            return "review tool budget state has an invalid format; stop and report blocked"
+        if time.time() - rec.get("ts", 0) > SESSION_TTL:
+            rec = {}
+        seen = rec.get("seenToolCallIds") or []
+        if tool_call_id and tool_call_id in seen:
+            return ""
+        if contract_scan:
+            scans = rec.get("contractScans", 0)
+            if scans >= FOLLOWUP_CONTRACT_SCAN_LIMIT:
+                return ("follow-up contract-scan limit reached "
+                        f"({FOLLOWUP_CONTRACT_SCAN_LIMIT}); return the evidence already collected")
+            rec["contractScans"] = scans + 1
+        else:
+            calls = rec.get("toolCalls", 0)
+            limit = FOLLOWUP_REVIEW_TOOL_LIMIT if mode == "follow-up" else FULL_REVIEW_TOOL_LIMIT
+            if calls >= limit:
+                return (f"{mode} review tool-call limit reached ({limit}); stop tool use and "
+                        "return the evidence collected, or mark the verdict uncertain")
+            rec["toolCalls"] = calls + 1
+        if tool_call_id:
+            rec["seenToolCallIds"] = (seen + [tool_call_id])[-256:]
+        rec["ts"] = time.time()
+        _write_json(path, rec)
+    return ""
 
 
 def session_rec(sid):
@@ -381,7 +531,17 @@ def consume_grant(token, slug, pr, kind, comment=None, path=None, line=None):
 
 
 # ---------------------------------------------------------------- payload helpers
+class _HookResult(Exception):
+    def __init__(self, value):
+        self.value = value
+
+
+_CAPTURE_HOOK_RESULT = False
+
+
 def _emit(d):
+    if _CAPTURE_HOOK_RESULT:
+        raise _HookResult(d)
     sys.stdout.write(json.dumps(d))
     sys.exit(0)
 
@@ -396,6 +556,10 @@ def deny(reason):
 
 def _args(payload):
     a = payload.get("toolArgs", payload.get("tool_input"))
+    if a is None:
+        calls = payload.get("toolCalls") or payload.get("tool_calls")
+        if isinstance(calls, list) and len(calls) == 1 and isinstance(calls[0], dict):
+            a = calls[0].get("args")
     if isinstance(a, str):
         try:
             a = json.loads(a)
@@ -421,7 +585,12 @@ def _sid(payload):
 
 
 def _tool(payload):
-    return str(payload.get("toolName") or payload.get("tool_name") or "")
+    tool = payload.get("toolName") or payload.get("tool_name")
+    if not tool:
+        calls = payload.get("toolCalls") or payload.get("tool_calls")
+        if isinstance(calls, list) and len(calls) == 1 and isinstance(calls[0], dict):
+            tool = calls[0].get("name")
+    return str(tool or "")
 
 
 # ---------------------------------------------------------------- shell analysis
@@ -648,7 +817,40 @@ def parse_selection(result_text, tokens):
 
 
 # ---------------------------------------------------------------- handlers
-def handle_pre(payload, force_review=False):
+def handle_pre(payload, force_review=False, agent_name=None):
+    global _CAPTURE_HOOK_RESULT
+    calls = payload.get("toolCalls") or payload.get("tool_calls")
+    if isinstance(calls, list):
+        payloads = []
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            item = dict(payload)
+            item["toolName"] = call.get("name")
+            item["toolArgs"] = call.get("args")
+            item["toolCallId"] = call.get("id")
+            item.pop("toolCalls", None)
+            item.pop("tool_calls", None)
+            payloads.append(item)
+    else:
+        payloads = [payload]
+    old_capture = _CAPTURE_HOOK_RESULT
+    _CAPTURE_HOOK_RESULT = True
+    denied = None
+    try:
+        for item in payloads:
+            try:
+                _handle_pre_one(item, force_review, agent_name)
+            except _HookResult as result:
+                if result.value.get("permissionDecision") == "deny":
+                    denied = result.value
+                    break
+    finally:
+        _CAPTURE_HOOK_RESULT = old_capture
+    _emit(denied or {})
+
+
+def _handle_pre_one(payload, force_review=False, agent_name=None):
     tool, sid, args = _tool(payload), _sid(payload), _args(payload)
     flat = "\n".join(_collect(args, []))
 
@@ -663,14 +865,31 @@ def handle_pre(payload, force_review=False):
              "Use pr_comments.py stage, then ask_user, then reply/comment --approval.")
 
     review = force_review or is_review_session(sid)
+    if review:
+        try:
+            reason = _review_tool_budget(
+                sid, tool, args, _tool_call_id(payload), agent_name)
+        except OSError as exc:
+            deny(f"cannot enforce reviewer tool budget; refusing tool call ({exc})")
+        if reason:
+            deny(reason)
 
     if tool == "task":
         prompt = str(args.get("prompt") or "")
         if prompt:
             h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:24]
-            _write_json(STATE / "launches" / f"{h}.json",
-                        {"parent": sid, "agentType": args.get("agent_type"),
-                         "prompt": prompt, "ts": time.time()})
+            agent = str(args.get("agent_type") or "")
+            try:
+                mode, target = _review_launch_mode(sid, agent, prompt, _tool_call_id(payload))
+            except OSError as exc:
+                deny(f"cannot persist duplicate review tracking; refusing reviewer launch ({exc})")
+            try:
+                _write_json(STATE / "launches" / f"{h}.json",
+                            {"parent": sid, "agentType": agent, "prompt": prompt,
+                             "reviewMode": mode, "reviewTarget": target, "ts": time.time()})
+            except OSError as exc:
+                if is_review_agent(agent):
+                    deny(f"cannot persist reviewer launch state; refusing reviewer launch ({exc})")
         allow()
 
     if tool == "ask_user":
@@ -841,7 +1060,7 @@ def handle_prompt(payload):
     if not sid:
         allow()
     now = time.time()
-    parent = agent = None
+    parent = agent = launch_mode = launch_target = None
     best = None
     ldir = STATE / "launches"
     if ldir.is_dir():
@@ -858,6 +1077,8 @@ def handle_prompt(payload):
                 best = (p, rec)
     if best:
         parent, agent = best[1].get("parent"), best[1].get("agentType")
+        launch_mode = best[1].get("reviewMode")
+        launch_target = best[1].get("reviewTarget")
         try:
             best[0].unlink()
         except Exception:
@@ -866,20 +1087,26 @@ def handle_prompt(payload):
     flag = bool(OPT_IN.search(prompt))
     rec = {"ts": now, "parent": old.get("parent") or parent,
            "agentType": old.get("agentType") or agent,
-           "promptFlag": bool(old.get("promptFlag")) or flag}
+           "promptFlag": bool(old.get("promptFlag")) or flag,
+           "reviewMode": old.get("reviewMode") or launch_mode,
+           "reviewTarget": old.get("reviewTarget") or launch_target}
     if not rec["parent"]:
         rec["userOptIn"] = bool(old.get("userOptIn")) or flag
     _write_json(STATE / "sessions" / f"{_safe(sid)}.json", rec)
     allow()
 
 
-def handle_review_prompt(payload):
+def handle_review_prompt(payload, agent_name=None):
     sid, prompt = _sid(payload), str(payload.get("prompt") or "")
     if sid:
         old = review_marker(sid) or {}
+        session = session_rec(sid) or {}
         _write_json(STATE / "review" / f"{_safe(sid)}.json",
                     {"ts": time.time(),
-                     "promptFlag": bool(old.get("promptFlag")) or bool(OPT_IN.search(prompt))})
+                     "promptFlag": bool(old.get("promptFlag")) or bool(OPT_IN.search(prompt)),
+                     "agentName": agent_name or old.get("agentName") or session.get("agentType"),
+                     "reviewMode": old.get("reviewMode") or session.get("reviewMode"),
+                     "reviewTarget": old.get("reviewTarget") or session.get("reviewTarget")})
     allow()
 
 
@@ -894,13 +1121,14 @@ def main():
     if mode == "pre":
         handle_pre(payload)
     elif mode == "review-pre":
-        handle_pre(payload, force_review=True)
+        handle_pre(payload, force_review=True,
+                   agent_name=sys.argv[2] if len(sys.argv) > 2 else None)
     elif mode == "post":
         handle_post(payload)
     elif mode == "prompt":
         handle_prompt(payload)
     elif mode == "review-prompt":
-        handle_review_prompt(payload)
+        handle_review_prompt(payload, sys.argv[2] if len(sys.argv) > 2 else None)
     allow()
 
 

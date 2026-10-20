@@ -22,7 +22,7 @@ the CLI runs on its own, so it applies policy without the agent's cooperation
 | `push-guard-hook.py` | `preToolUse` handler that **blocks `git push` to a protected branch** (main/master, plus any configured `baseBranch`) at the tool layer. This is the *enforcement* half of the `git-push-guard` skill. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` handler that enforces the **shell trust boundary** (fail-open defense-in-depth): (A) denies *any* agent's shell command that references a secret path (`mcp-config.json`, `.secrets/`, `*.token`/`*.pem`/`*.key`); (B) while a **read-only agent** (reviewer / read-only orchestrator) is active, additionally denies file-mutating shell (`Set-Content`/`Out-File`/`rm`/`mv`/`sed -i`/`>` redirect/`git commit`\|`apply`\|`reset`…). |
 | `slop-guard-hook.py` | `preToolUse` handler that **enforces the PR-comment humanize + grounding gates** at the tool layer. This is the *enforcement* half of the `pr-comment-respond` skill: it denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, denies `--no-lint` / `--no-ground`, and denies `pr_comments.py reply`/`comment` without `--approval`. Covers GitHub, GitLab, and Bitbucket endpoints. Read-only GETs that list comments stay allowed. |
-| `pr-post-gate-hook.py` | Global `preToolUse` (all tools) + `postToolUse` (`ask_user`, shell) + `userPromptSubmitted`, plus agent-scoped `review-prompt`/`review-pre` modes declared in `review-orchestrator`'s frontmatter. **Deterministic, fail-closed PR comment gate**: posting from a review is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant bound to session + PR + target + text hash that the hook mints only after the user selected Post (or `true` in a legacy boolean form) showing the exact staged text. Edit text requires restaging and fresh approval. Text must be humanized, have no hyphen/dash or semicolon outside `code`, and pass slophound (missing slophound = deny). Denies `gh`/`glab` comment commands, MCP comment tools, raw HTTP comment writes, `pr_comments` internals and approval-state access. Keeps review sessions (and every subagent they spawn) read-only: no edits, commits, pushes, merges, resolve/delete. Tests: `tests/test_pr_post_gate.py`. |
+| `pr-post-gate-hook.py` | Global `preToolUse` (all tools) + `postToolUse` (`ask_user`, shell) + `userPromptSubmitted`, plus agent-scoped modes declared in `review-orchestrator`, `code-reviewer` and `security-reviewer`. **Deterministic PR comment and review-work gate**: posting from a review is OFF unless the human typed `--post-comments=true`; every post needs a one-use, HMAC-signed grant bound to session + PR + target + text hash that the hook mints only after the user selected Post (or `true` in a legacy boolean form) showing the exact staged text. Edit text requires restaging and fresh approval. Text must be humanized, have no hyphen/dash or semicolon outside `code`, and pass slophound (missing slophound = deny). Denies `gh`/`glab` comment commands, MCP comment tools, raw HTTP comment writes, `pr_comments` internals and approval-state access. Keeps review sessions read-only and caps full reviews at 64 ordinary tool calls, with same pinned PR range follow ups capped at 8 calls plus 2 contract scans. Tests: `tests/test_pr_post_gate.py`. |
 | `hooks.example.json` | The hook registration the CLI reads. Copy it to `~/.copilot/hooks/`. |
 
 ## Why the shell-guard hook exists
@@ -86,6 +86,17 @@ against every author's open comments/tasks at the same nonorphaned file/line.
 Normalised equal wording, equivalent release reminders, or 80% word-set overlap
 with at least four shared words suppress posting. Resolved items do not count.
 API failures are errors, never permission to post a duplicate.
+
+The same hook also bounds reviewer work at runtime. It tracks repeated launches of
+the same reviewer for the same PR URL and exact base and head commits within one
+orchestrator session. The first review gets 64 ordinary tool calls; a repeated
+pinned range gets 8 ordinary calls and at most 2 contract scans. A different
+commit range starts a full review. The orchestrator and both shipped reviewers
+declare scoped hook entries, so the budget is not only an instruction in their
+prompts. When a runtime supplies a tool call ID, the hook uses it to avoid
+counting the same global and scoped callback twice. If an ID is missing, both
+callbacks may consume budget separately, which can stop a review early but
+cannot let it exceed the configured maximum.
 
 Instructions like "only post after the user says yes" can be skipped or
 self-satisfied. If an approval token is minted at `stage`, before a human sees the

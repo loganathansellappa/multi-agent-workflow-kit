@@ -62,6 +62,11 @@ findings into one report. Reviewers and `review-orchestrator` always return find
 `--html-report=true` (default `false`) to any of them to additionally write an HTML report to
 `outputs.reportsRoot`.
 
+Reviewer hooks also apply deterministic tool-call budgets. A full review is capped at 64 ordinary tool
+calls. A repeat review of the same PR URL and pinned base and head commits in the same orchestrator
+session is capped at 8 ordinary calls and 2 contract scans, so follow ups can reuse earlier evidence
+instead of repeating the full review.
+
 > **`--html-report` is not a `copilot` CLI flag** — the CLI only accepts its own fixed options
 > (`--agent`, `-p`/`--prompt`, `--allow-all`, etc.), so passing `--html-report=true` as a separate
 > command-line argument fails with `error: unknown option`. Put it inside the quoted `--prompt`/`-p` text
@@ -142,7 +147,7 @@ frontmatter (`review-orchestrator` does) — see [`hooks/README.md`](hooks/READM
 | `push-guard-hook.py` | `preToolUse` | The **enforcement** half of `git-push-guard`: inspects every shell `git push` and **denies** pushes to a protected branch at the tool layer. Fail-open on hook error so it can never brick a session. |
 | `shell-guard-hook.py` | `preToolUse` + `subagentStart`/`subagentStop` | Enforces the shell trust boundary: denies secret-path reads for any agent, and denies workspace mutation while a read-only agent is active. Fail-open. |
 | `slop-guard-hook.py` | `preToolUse` | The light first line for `pr-comment-respond`: denies a PR-comment POST made with a raw HTTP client (`curl`/`gh api`/`glab api`/`Invoke-RestMethod`/`urllib`) that bypasses the gated `pr_comments.py`, denies `--no-lint`/`--no-ground`, and denies a post without `--approval`. Covers GitHub, GitLab, and Bitbucket. Fail-open. |
-| `pr-post-gate-hook.py` | `preToolUse` + `postToolUse` + `userPromptSubmitted` (+ agent-scoped modes) | **Deterministic, fail-closed PR comment gate.** Review posting is OFF unless the human typed `--post-comments=true`; each post needs a one-use HMAC grant the hook mints only after the user answers `true` to an `ask_user` form showing the exact text, bound to session + PR + target + text. Text must be humanized, have no hyphen/dash or semicolon, and pass slophound. Denies `gh`/`glab`/MCP/raw-HTTP comment writes and keeps reviews read-only (no edits, commits, pushes, merges). |
+| `pr-post-gate-hook.py` | `preToolUse` + `postToolUse` + `userPromptSubmitted` (+ agent-scoped modes) | **Deterministic PR comment and review-work gate.** Review posting is OFF unless the human typed `--post-comments=true`; each post needs a one-use HMAC grant the hook mints only after the user answers `true` to an `ask_user` form showing the exact text, bound to session + PR + target + text. Text must be humanized, have no hyphen/dash or semicolon, and pass slophound. Denies `gh`/`glab`/MCP/raw-HTTP comment writes, keeps reviews read-only, caps full reviews at 64 ordinary tool calls and pinned-range follow ups at 8 calls plus 2 contract scans. |
 
 Install them with `python scripts/install_to_copilot.py --hooks` (then restart the CLI). Run the
 skills and the hooks together (defense-in-depth) and back the push rule with

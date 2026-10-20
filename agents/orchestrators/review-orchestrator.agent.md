@@ -8,11 +8,11 @@ tools: ['execute', 'read', 'search', 'task', 'skill', 'ask_user']
 hooks:
   userPromptSubmitted:
     - type: command
-      command: python "$HOME/.copilot/hooks/pr-post-gate-hook.py" review-prompt
+      command: python "$HOME/.copilot/hooks/pr-post-gate-hook.py" review-prompt review-orchestrator
       timeoutSec: 10
   preToolUse:
     - type: command
-      command: python "$HOME/.copilot/hooks/pr-post-gate-hook.py" review-pre
+      command: python "$HOME/.copilot/hooks/pr-post-gate-hook.py" review-pre review-orchestrator
       timeoutSec: 30
 ---
 
@@ -39,6 +39,16 @@ only.
    - general code changes → `code-reviewer`
    - auth / input-handling / crypto / untrusted-data changes → also `security-reviewer`
    - Launch independent reviewer groups in parallel where possible.
+   For PR reviews, include the PR URL and full commit hashes in the exact format
+   `base=<full sha> head=<full sha>` in each reviewer prompt. The hook also accepts
+   `Base commit: <sha>` and `Head commit: <sha>`. When a user asks to verify a finding from an earlier
+   review of that same pinned range in this session, include the prior findings
+   and evidence, and ask only for that verification. The hook recognizes the
+   repeated PR range and enforces a maximum of 8 ordinary tool calls and 2
+   contract scans for the follow up. A first or changed range has a 64 call
+   limit. If reports disagree, resolve the smallest disputed source fact first.
+   Return `uncertain` and stop if the evidence is still inconclusive at the cap.
+   Do not launch another reviewer to continue past the cap.
 6. **Aggregate** all findings into a single report using skill `review-findings-output` (dedupe overlaps,
    preserve file/line evidence and concrete fixes, sort by severity).
 7. **Only produce a findings report when there are real findings.** If everything is
