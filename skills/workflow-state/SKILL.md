@@ -74,7 +74,7 @@ called out in the handoff for explicit human review.
 An **append-only** record of *why* the orchestrator made each routing/conclusion
 decision, so a run can be reconstructed after `/resume` instead of re-reading the
 whole transcript. Each entry stamps the current HEAD and stores: the decision kind
-(`delegate` / `conclude` / `expand-scope` / …), the `choice`, the `alternatives`
+(`delegate` / `conclude` / `expand-scope` / `approach` / …), the `choice`, the `alternatives`
 considered, one or more `reason`s, cited `evidence`, and an optional `confidence`.
 
 ```

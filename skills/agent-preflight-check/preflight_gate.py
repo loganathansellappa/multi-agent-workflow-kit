@@ -104,7 +104,10 @@ def main(argv=None):
 
     # --- 1. Model-routing hint (advisory only) ---
     model_guard = "ok"
-    if pure_cheap_role and is_premium:
+    if is_personal:
+        # Exempt agents are never governed, so they get no model advisory.
+        model_guard = "exempt"
+    elif pure_cheap_role and is_premium:
         model_guard = "mismatch"
         advise(f"model: standard-tier role '{args.agent}' is on premium model '{args.model}' "
                f"(~5x cost, no quality gain). Consider /model or /subagents to a Sonnet/Haiku-class model.")

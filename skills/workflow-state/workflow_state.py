@@ -437,7 +437,7 @@ def build_parser():
     p.set_defaults(fn=cmd_set_terminal)
 
     p = sub.add_parser("log-decision", help="append one orchestrator decision (audit ledger)")
-    p.add_argument("--decision", required=True, help="kind of decision, e.g. delegate|conclude|expand-scope")
+    p.add_argument("--decision", required=True, help="kind of decision, e.g. delegate|conclude|expand-scope|approach")
     p.add_argument("--choice", required=True, help="what was chosen, e.g. backend-developer|DONE")
     p.add_argument("--alternatives", nargs="*", default=[], help="options considered but not chosen")
     p.add_argument("--reason", nargs="*", default=[], help="one or more reasons for the choice")

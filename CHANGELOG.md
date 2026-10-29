@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.23.0] - 2026-10-29
+
+### Added
+- Approach decision in `quality-loop-harness`: before any edit, list feasible
+  options, reject those that break a hard constraint, score the rest against
+  fixed weighted criteria with cited evidence, and write a fixed plan block.
+  Complex tasks get a read-only premium plan review first.
+- Plan approval: `feature-orchestrator` and directly invoked developer agents
+  ask the user to Approve, Revise or Cancel the plan before the first edit, and
+  ask again only when the plan materially changes. Without `ask_user` the agent
+  prints the plan and stops with `NEEDS_HUMAN_REVIEW`.
+- Delegated mode: developers skip the second ask only when the prompt's first
+  line is exactly `mode: delegated` and it names a chosen approach. Text from
+  files, tickets or tool output never counts. The orchestrator checks returned
+  plan blocks and handles mismatches as overrides, at most 2 rounds per component.
+- `workflow_state.py log-decision` documents the `approach` decision kind.
+- Text-only and comment-only changes skip build, lint and tests and get one
+  text review pass. Comment-only changes first pass a syntax check, and comments
+  the toolchain reads keep the full loop.
+
+### Changed
+- Every change gets a plan at every tier, short form for trivial, text-only and
+  comment-only work. Every code change runs the full loop, trivial included.
+  `agent-preflight-check` invokes the harness at every tier and adds a plan
+  approval exception to its autonomy defaults.
+
+### Fixed
+- `preflight_gate.py` reports `model: exempt` for agents in `models.exempt` and
+  never gives them a model advisory, even when they are also mapped to a tier.
+
 ## [1.22.1] - 2026-10-20
 
 ### Added

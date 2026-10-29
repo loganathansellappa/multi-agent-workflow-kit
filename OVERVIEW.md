@@ -50,7 +50,7 @@ Developers own the loop and call a read-only reviewer. Opening the PR stays with
 
 **Review**
 - `review-findings-output` — findings contract: severity buckets + `file:line` evidence + a concrete fix.
-- `quality-loop-harness` — the build/verify/review/fix loop with explicit gates and a **loop cap**.
+- `quality-loop-harness` — the build/verify/review/fix loop with explicit gates and a **loop cap**, preceded by a scored approach decision and a user-approved plan before the first edit.
 - `pr-comment-respond` — close the loop on PR review comments two ways: **inbound** (reviewers commented on your PR → judge each against the real code → delegate the fix to the owning component's developer agent → reply + resolve behind a confirmation gate) and **authoring** (review a diff, then post comments after a confirmation gate). Every post passes a **humanize + slophound gate** so review feedback never goes out in AI voice. Config-driven routing; Bitbucket reference adapter (GitHub/GitLab/Cloud documented).
 
 **Learning / metrics**

@@ -75,7 +75,20 @@ integrations:
         # Exempt/personal agents are never governed, even on a premium model.
         code, text = self.gate("my-personal-agent", "claude-opus-4.8")
         self.assertEqual(code, 0)
-        self.assertIn("model: ok", text)
+        self.assertIn("model: exempt", text)
+        self.assertNotIn("info: model:", text)
+
+    def test_exempt_agent_gets_no_model_advisory(self):
+        # An exempt agent that is also mapped premium gets no under-tiered hint on a cheap model.
+        cfg = self.tmp / "exempt-mapped.yaml"
+        cfg.write_text(
+            f"outputs:\n  metricsLog: {self.metrics}\n\n"
+            f"models:\n  agents:\n    my-personal-agent: premium\n"
+            f"  exempt: [my-personal-agent]\n", encoding="utf-8")
+        code, text = self.gate("my-personal-agent", "claude-sonnet-5", tier="complex", config=str(cfg))
+        self.assertEqual(code, 0)
+        self.assertIn("model: exempt", text)
+        self.assertNotIn("info: model:", text)
 
     def test_premium_on_premium_is_clean(self):
         # A premium-tier agent on a premium model is correctly routed (no hint).

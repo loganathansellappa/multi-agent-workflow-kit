@@ -91,17 +91,19 @@ Emit `tier: <trivial|standard|complex>` in the handoff stamp.
 
 ## Downstream skill gating (tiered fixed-cost control)
 
-Load only what the tier needs — do not pay the full hardening tax on trivial work:
+Load only what the tier needs, but never skip the code loop for a code change:
 
 | Skill | trivial | standard | complex |
 |---|---|---|---|
 | `untrusted-input-guard` (security, cheap) | always | always | always |
 | `agent-preflight-check` (this gate) | always | always | always |
-| `quality-loop-harness` | skip | invoke | invoke |
-| `delivery-metrics-capture` | lightweight line (below) | invoke | invoke |
+| `quality-loop-harness` | invoke (plan always, code loop for code changes) | invoke | invoke |
+| `delivery-metrics-capture` | invoke for code changes, lightweight line (below) for text/comment-only | invoke | invoke |
 
-For **trivial** tasks, skip `quality-loop-harness` and, instead of the full metrics skill, append ONE
-minimal line to `outputs.metricsLog` so cost data is never lost:
+Every code change runs the full `quality-loop-harness` loop, trivial included. Only text-only or
+comment-only changes (harness → "Text-only and comment-only changes") take the lighter path. For a
+trivial text-only or comment-only change, instead of the full metrics skill, append ONE minimal line to
+`outputs.metricsLog` so cost data is never lost:
 `{"ts":"...","agent":"<name>","task_type":"...","tier":"trivial","tokens":"<n|unknown>"}`.
 
 ## Model-routing assertion (the 5× lever — driven by config, surfaced advisory)
@@ -112,7 +114,8 @@ written into the Copilot store by `scripts/apply_model_routing.py`. This check s
 
 1. State the **active model** you are running on.
 2. Determine this agent's tier from `models.agents` (fallback if unmapped: reviewers/orchestrators =
-   standard). Agents in `models.exempt` are exempt — do not tier or flag them.
+   standard). Agents in `models.exempt` are exempt — do not tier or flag them, report the check as
+   `model: exempt` with no advisory.
 3. Assert:
    - Standard-tier role on a premium (Opus-class) model → emit `model: mismatch` and recommend
      `/model` (repo/local) or `/subagents`, or re-run `apply_model_routing.py`. Advisory only — surfaces
@@ -155,6 +158,9 @@ Optimize for the fewest tokens that preserve context and quality:
 - On recoverable failures (build error, lint failure, missing dep after a manifest change), self-recover
   through the loop before escalating.
 - State assumptions explicitly in the plan instead of pausing to confirm each one.
+- **Exception, plan approval:** `feature-orchestrator` and directly invoked developer agents always
+  `ask_user` to approve their plan before the first edit (skill `quality-loop-harness` → "Plan
+  approval"). Developers delegated by the orchestrator (`mode: delegated`) show their plan but never ask.
 
 ## Handoff evidence stamp (reliability)
 
